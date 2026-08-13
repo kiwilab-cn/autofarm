@@ -359,6 +359,8 @@ pub struct Robot {
     pub inventory: Inventory,
     pub condition: f32,
     pub position: TilePos,
+    pub movement_target: Option<TilePos>,
+    pub movement_progress: f32,
     pub home_position: TilePos,
     pub work_progress: f32,
 }

@@ -475,7 +475,7 @@ mod tests {
         let tomato = simulation.next_command(
             CommandActor::Human,
             GameCommand::Farm(FarmCommand::CreateFieldZone {
-                origin: autofarm_sim::TilePos::new(40, 36),
+                origin: autofarm_sim::TilePos::new(2, 30),
                 size: (3, 3),
                 crop_id: "tomato".to_owned(),
             }),

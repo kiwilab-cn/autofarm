@@ -4,6 +4,7 @@
     pixel_filter: "nearest",
     naming: "lowercase-kebab-case",
     assets: [
+        (id: "map.verdant-paddy.base", path: "art/pixel/maps/verdant-paddy/base-map.png", kind: "map-background", size: (2048, 2048), frame: (2048, 2048), frames: 1, provenance: "built-in-imagegen-nearest-upscale"),
         (id: "paddy.flooded-field", path: "art/pixel/environment/paddy/flooded-field.png", kind: "tile", size: (96, 96), frame: (96, 96), frames: 1, provenance: "built-in-imagegen"),
         (id: "paddy.infrastructure", path: "art/pixel/environment/paddy/infrastructure-sheet.png", kind: "environment-atlas", size: (512, 256), frame: (128, 128), frames: 8, provenance: "built-in-imagegen-chroma-cleanup"),
         (id: "rice.stage-0", path: "art/pixel/crops/rice/stage-0.png", kind: "crop-stage", size: (96, 96), frame: (96, 96), frames: 1, provenance: "built-in-imagegen-chroma-cleanup"),
