@@ -12,6 +12,9 @@ pub use command::{
     GameCommand,
 };
 pub use content::{ContentCatalog, ContentError};
-pub use map::{MapDefinition, MapFacilityDef, MapZoneDef, TerrainRegionDef};
+pub use map::{
+    MapCollisionAreaDef, MapDefinition, MapError, MapFacilityDef, MapNavigationAreaDef,
+    MapTileCellDef, MapTileLayerDef, MapTilesetKind, MapZoneDef,
+};
 pub use model::*;
 pub use simulation::{GameSimulation, SimulationError};

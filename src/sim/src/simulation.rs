@@ -14,7 +14,7 @@ use crate::{
     WaterNetwork, Weather, calculate_autonomy_report,
 };
 
-pub const SAVE_VERSION: u32 = 5;
+pub const SAVE_VERSION: u32 = 6;
 const MAX_EVENTS: usize = 80;
 const IDLE_RETURN_DELAY_MINUTES: f32 = 12.0;
 
@@ -35,6 +35,8 @@ pub struct GameSimulation {
     pub version: u32,
     pub seed: u64,
     pub catalog: ContentCatalog,
+    pub map_id: String,
+    #[serde(skip, default)]
     pub map: MapDefinition,
     pub grid: FarmGrid,
     pub clock: SimClock,
@@ -67,10 +69,12 @@ impl GameSimulation {
         let catalog = ContentCatalog::load_embedded()?;
         let map = MapDefinition::load_embedded()
             .map_err(|error| SimulationError::Map(error.to_string()))?;
+        let map_id = map.id.clone();
         let mut simulation = Self {
             version: SAVE_VERSION,
             seed,
             catalog: catalog.clone(),
+            map_id,
             grid: FarmGrid::from_definition(&map),
             map,
             clock: SimClock::default(),
@@ -130,7 +134,7 @@ impl GameSimulation {
 
         simulation.activate_contract(0);
         for facility in simulation.map.starter_facilities.clone() {
-            simulation.spawn_facility_unchecked(facility.kind, facility.position);
+            simulation.spawn_map_facility_unchecked(&facility);
         }
         for (robot_id, bay) in simulation
             .map
@@ -461,7 +465,13 @@ impl GameSimulation {
                 position,
             } => {
                 for _ in 0..count {
-                    self.spawn_robot_unchecked(&robot_def_id, position);
+                    self.spawn_robot_unchecked(&robot_def_id, position)
+                        .ok_or_else(|| {
+                            CommandError::Invalid(format!(
+                                "there is no collision-free spawn near ({}, {})",
+                                position.x, position.y
+                            ))
+                        })?;
                 }
             }
             EditorCommand::PatchCropDefinition { definition } => {
@@ -1478,7 +1488,7 @@ impl GameSimulation {
     }
 
     pub fn from_ron(input: &str) -> Result<Self, SimulationError> {
-        let simulation: Self = ron::from_str(input)
+        let mut simulation: Self = ron::from_str(input)
             .map_err(|error| SimulationError::Serialization(error.to_string()))?;
         if simulation.version != SAVE_VERSION {
             return Err(SimulationError::UnsupportedSaveVersion {
@@ -1486,6 +1496,15 @@ impl GameSimulation {
                 expected: SAVE_VERSION,
             });
         }
+        let map = MapDefinition::load_embedded()
+            .map_err(|error| SimulationError::Map(error.to_string()))?;
+        if simulation.map_id != map.id {
+            return Err(SimulationError::Map(format!(
+                "save references map {}; runtime provides {}",
+                simulation.map_id, map.id
+            )));
+        }
+        simulation.map = map;
         Ok(simulation)
     }
 
@@ -1614,11 +1633,7 @@ impl GameSimulation {
 
     fn spawn_robot_unchecked(&mut self, robot_def_id: &str, position: TilePos) -> Option<u64> {
         let definition = self.catalog.robots.get(robot_def_id)?.clone();
-        let position = if self.robots.iter().any(|robot| robot.position == position) {
-            self.available_garage_bay()?
-        } else {
-            position
-        };
+        let position = self.available_robot_spawn(position, definition.body, &definition.id)?;
         let id = self.next_entity_id;
         self.next_entity_id += 1;
         self.robots.push(Robot {
@@ -1650,6 +1665,45 @@ impl GameSimulation {
         Some(id)
     }
 
+    fn available_robot_spawn(
+        &self,
+        preferred: TilePos,
+        body: RobotBody,
+        robot_def_id: &str,
+    ) -> Option<TilePos> {
+        (0..self.grid.height)
+            .flat_map(|y| (0..self.grid.width).map(move |x| TilePos::new(x, y)))
+            .filter(|position| {
+                let Some(tile) = self.grid.tile(*position) else {
+                    return false;
+                };
+                if tile.building.is_some()
+                    || self.robots.iter().any(|robot| robot.position == *position)
+                {
+                    return false;
+                }
+                if body == RobotBody::Flying {
+                    return true;
+                }
+                !matches!(
+                    tile.terrain,
+                    TerrainKind::Water | TerrainKind::Rock | TerrainKind::IrrigationChannel
+                ) && !(body == RobotBody::Wheeled && tile.terrain == TerrainKind::PaddyBund)
+                    && (body != RobotBody::Wheeled
+                        || tile.crop.is_none()
+                        || robot_def_id == "rice_harvester")
+            })
+            .min_by_key(|position| {
+                (
+                    position.manhattan(preferred),
+                    position.y.abs_diff(preferred.y),
+                    position.x.abs_diff(preferred.x),
+                    position.y,
+                    position.x,
+                )
+            })
+    }
+
     fn spawn_facility_unchecked(&mut self, kind: FacilityKind, position: TilePos) -> u64 {
         let id = self.next_entity_id;
         self.next_entity_id += 1;
@@ -1667,6 +1721,26 @@ impl GameSimulation {
         id
     }
 
+    fn spawn_map_facility_unchecked(&mut self, definition: &crate::MapFacilityDef) -> u64 {
+        let id = self.spawn_facility_unchecked(definition.kind, definition.position);
+        let collision_areas: Vec<_> = self
+            .map
+            .collision_areas
+            .iter()
+            .filter(|area| area.owner == Some(definition.kind))
+            .map(|area| (area.origin, area.size))
+            .collect();
+        for (origin, size) in collision_areas {
+            for position in self.grid.positions_in_rect(origin, size) {
+                if let Some(tile) = self.grid.tile_mut(position) {
+                    tile.building = Some(id);
+                    tile.occupied = true;
+                }
+            }
+        }
+        id
+    }
+
     fn delete_entity(&mut self, entity_id: u64) {
         if let Some(index) = self
             .facilities
@@ -1674,10 +1748,11 @@ impl GameSimulation {
             .position(|facility| facility.id == entity_id)
         {
             let facility = self.facilities.remove(index);
-            if let Some(tile) = self.grid.tile_mut(facility.position) {
-                tile.building = None;
-                tile.occupied = false;
-                tile.terrain = TerrainKind::Soil;
+            for tile in &mut self.grid.tiles {
+                if tile.building == Some(facility.id) {
+                    tile.building = None;
+                    tile.occupied = false;
+                }
             }
             return;
         }
@@ -1938,6 +2013,18 @@ mod tests {
         assert!(simulation.robots.iter().all(
             |robot| robot.state == RobotState::Parked && robot.position == robot.home_position
         ));
+        assert!(
+            simulation
+                .grid
+                .tile(TilePos::new(40, 5))
+                .is_some_and(|tile| tile.building.is_some())
+        );
+        assert!(simulation.map.garage_bays.iter().all(|bay| {
+            simulation
+                .grid
+                .tile(*bay)
+                .is_some_and(|tile| tile.building.is_none())
+        }));
         Ok(())
     }
 
@@ -1948,8 +2035,8 @@ mod tests {
         assert_eq!((simulation.map.width, simulation.map.height), (64, 64));
         assert_eq!(simulation.map.tile_size, 32);
         assert_eq!(
-            simulation.map.background_asset,
-            "art/pixel/maps/verdant-paddy/base-map.png"
+            simulation.map.terrain_tileset_asset,
+            "art/pixel/tilesets/verdant-paddy-terrain.png"
         );
         assert_eq!(simulation.zones[0].size, (11, 28));
         assert_eq!(simulation.zones[1].size, (13, 28));

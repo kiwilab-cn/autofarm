@@ -1,0 +1,143 @@
+{
+  "type": "tileset",
+  "tiledversion": "1.12.2",
+  "version": "1.10",
+  "name": "verdant-paddy-infrastructure",
+  "tilewidth": 32,
+  "tileheight": 32,
+  "tilecount": 8,
+  "columns": 4,
+  "image": "../../art/pixel/tilesets/verdant-paddy-infrastructure.png",
+  "imagewidth": 128,
+  "imageheight": 64,
+  "tiles": [
+    {
+      "id": 0,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Bund Horizontal"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "PaddyBund"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Bund Vertical"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "PaddyBund"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Bund Corner"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "PaddyBund"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Farm Path"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "FarmPath"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Channel Horizontal"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "IrrigationChannel"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Channel Vertical"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "IrrigationChannel"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Culvert"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "Culvert"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Garage Apron"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "GarageApron"
+        }
+      ]
+    }
+  ]
+}
