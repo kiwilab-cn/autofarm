@@ -3,8 +3,14 @@ use std::{cmp::Reverse, collections::BinaryHeap};
 use crate::{FarmGrid, RobotBody, TerrainKind, TilePos};
 
 #[must_use]
-pub(crate) fn path_exists(grid: &FarmGrid, start: TilePos, goal: TilePos, body: RobotBody) -> bool {
-    next_ground_step(grid, start, goal, body).is_some()
+pub(crate) fn path_exists(
+    grid: &FarmGrid,
+    start: TilePos,
+    goal: TilePos,
+    body: RobotBody,
+    allow_planted_fields: bool,
+) -> bool {
+    next_ground_step(grid, start, goal, body, allow_planted_fields).is_some()
 }
 
 #[must_use]
@@ -13,13 +19,14 @@ pub(crate) fn next_ground_step(
     start: TilePos,
     goal: TilePos,
     body: RobotBody,
+    allow_planted_fields: bool,
 ) -> Option<TilePos> {
     let start_index = grid.index(start)?;
     let goal_index = grid.index(goal)?;
     if start == goal {
         return Some(start);
     }
-    if !is_passable(grid, goal, body) {
+    if !is_passable(grid, goal, body, allow_planted_fields) {
         return None;
     }
 
@@ -38,7 +45,7 @@ pub(crate) fn next_ground_step(
         }
         let current = index_position(grid, current_index);
         for neighbor in neighbors(grid, current) {
-            if !is_passable(grid, neighbor, body) {
+            if !is_passable(grid, neighbor, body, allow_planted_fields) {
                 continue;
             }
             let step_cost = match (grid.tile(neighbor).map(|tile| tile.terrain), body) {
@@ -85,9 +92,16 @@ fn neighbors(grid: &FarmGrid, position: TilePos) -> impl Iterator<Item = TilePos
     [left, up, right, down].into_iter().flatten()
 }
 
-fn is_passable(grid: &FarmGrid, position: TilePos, _body: RobotBody) -> bool {
-    grid.tile(position)
-        .is_some_and(|tile| !matches!(tile.terrain, TerrainKind::Water | TerrainKind::Rock))
+fn is_passable(
+    grid: &FarmGrid,
+    position: TilePos,
+    body: RobotBody,
+    allow_planted_fields: bool,
+) -> bool {
+    grid.tile(position).is_some_and(|tile| {
+        !matches!(tile.terrain, TerrainKind::Water | TerrainKind::Rock)
+            && (body != RobotBody::Wheeled || tile.crop.is_none() || allow_planted_fields)
+    })
 }
 
 fn index_position(grid: &FarmGrid, index: usize) -> TilePos {
@@ -97,7 +111,7 @@ fn index_position(grid: &FarmGrid, index: usize) -> TilePos {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Tile;
+    use crate::{CropInstance, Tile};
 
     fn open_grid() -> FarmGrid {
         FarmGrid {
@@ -118,6 +132,7 @@ mod tests {
             TilePos::new(1, 2),
             TilePos::new(3, 2),
             RobotBody::Quadruped,
+            true,
         );
         assert!(step.is_some_and(|step| step != TilePos::new(2, 2)));
     }
@@ -133,6 +148,7 @@ mod tests {
             TilePos::new(1, 2),
             TilePos::new(3, 2),
             RobotBody::Wheeled,
+            false,
         );
         assert!(step.is_some_and(|step| step != TilePos::new(2, 2)));
     }
@@ -148,6 +164,37 @@ mod tests {
             TilePos::new(1, 2),
             TilePos::new(3, 2),
             RobotBody::Biped,
+            true,
         ));
+    }
+
+    #[test]
+    fn wheeled_prep_robot_routes_around_planted_field() {
+        let mut grid = open_grid();
+        if let Some(tile) = grid.tile_mut(TilePos::new(2, 2)) {
+            tile.crop = Some(CropInstance {
+                crop_id: "rice".to_owned(),
+                planted_at: 0,
+                stage_index: 1,
+                stage_progress: 0,
+                moisture: 100,
+                health: 100,
+                pollinated: false,
+                inspection_due: false,
+                pest_pressure: 0,
+                pest_controlled: true,
+                weed_pressure: 0,
+                soil_compaction: 0,
+                remaining_harvests: 1,
+            });
+        }
+        let step = next_ground_step(
+            &grid,
+            TilePos::new(1, 2),
+            TilePos::new(3, 2),
+            RobotBody::Wheeled,
+            false,
+        );
+        assert!(step.is_some_and(|step| step != TilePos::new(2, 2)));
     }
 }
