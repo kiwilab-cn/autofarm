@@ -75,9 +75,9 @@ fn spawn_title_screen(mut commands: Commands, assets: Res<AssetServer>, session:
                 BorderColor::all(theme::PANEL_BORDER),
                 children![
                     label("AUTOFARM", 58.0, theme::TEXT),
-                    label("DESIGN THE FARM THAT RUNS ITSELF", 19.0, theme::ACCENT),
+                    label("AUTONOMOUS RICE CELL", 19.0, theme::ACCENT),
                     label(
-                        "Robots cultivate. Managers decide. You design the system.",
+                        "Prepare • Flood • Transplant • Protect • Harvest",
                         17.0,
                         theme::MUTED,
                     ),
@@ -148,7 +148,12 @@ fn spawn_hud(mut commands: Commands) {
                 BorderColor::all(theme::PANEL_BORDER),
             ))
             .with_children(|panel| {
-                panel.spawn(label("BUILD & CONTROL", 17.0, theme::ACCENT));
+                panel.spawn(label("RICE OPERATIONS", 17.0, theme::ACCENT));
+                panel.spawn(label(
+                    "01 PADDY ROVER  — PREP + FLOOD\n02 SIX-LEGGER   — TRANSPLANT\n03 QUADCOPTER   — PEST CONTROL\n04 HARVESTER    — COLLECT",
+                    12.0,
+                    theme::GOLD,
+                ));
                 for (text, action) in [
                     ("F  CYCLE CROP", UiAction::CycleCrop),
                     ("R  BUY ROBOT", UiAction::BuyRobot),
@@ -180,7 +185,7 @@ fn spawn_hud(mut commands: Commands) {
                         });
                 }
                 panel.spawn(label(
-                    "Drag on the map to place a rectangular field.",
+                    "Drag on the map to place a field. Scroll to inspect pixel details.",
                     13.0,
                     theme::MUTED,
                 ));
@@ -253,7 +258,7 @@ fn spawn_hud(mut commands: Commands) {
                             border: UiRect::all(px(1)),
                             ..default()
                         },
-                        EditableText::new("create tomato field"),
+                        EditableText::new("create rice field"),
                         TextCursorStyle::default(),
                         TextFont {
                             font_size: FontSize::Px(15.0),
@@ -436,10 +441,10 @@ fn update_hud_text(
         );
     }
     let editor = session.editor.pending().map_or_else(
-        || "No valid preview. Supported intents: create tomato field / create wheat field / add drone".to_owned(),
+        || "No valid preview. Supported intents: create rice field / create tomato field / add drone".to_owned(),
         |plan| {
             format!(
-                "> create tomato field\n\nAI: {}\nReason: {}\n\n{} typed command(s), world revision {}",
+                "> create rice field\n\nAI: {}\nReason: {}\n\n{} typed command(s), world revision {}",
                 plan.summary,
                 plan.rationale,
                 plan.commands.len(),
@@ -516,11 +521,13 @@ fn inspector_text(session: &GameSession) -> String {
                     .and_then(|definition| definition.stages.get(crop.stage_index))
                     .map_or("Unknown", |stage| stage.name.as_str());
                 format!(
-                    "{} / {}\nMoisture {}%  Health {}%\nPollinated {}  Inspection {}",
+                    "{} / {}\nMoisture {}%  Health {}%\nPests {}%  Protection {}\nPollinated {}  Inspection {}",
                     crop.crop_id,
                     stage,
                     crop.moisture,
                     crop.health,
+                    crop.pest_pressure,
+                    if crop.pest_controlled { "DONE" } else { "DUE" },
                     yes_no(crop.pollinated),
                     if crop.inspection_due { "DUE" } else { "OK" },
                 )
@@ -535,12 +542,13 @@ fn inspector_text(session: &GameSession) -> String {
             .collect::<Vec<_>>()
             .join(", ");
         return format!(
-            "\nTILE {}, {}\nTerrain: {:?}\nFertility: {}%\nTilled: {}\n\nCROP\n{}\n\nJOBS\n{}",
+            "\nTILE {}, {}\nTerrain: {:?}\nFertility: {}%\nTilled: {}\nPaddy water: {}%\n\nCROP\n{}\n\nJOBS\n{}",
             position.x,
             position.y,
             tile.terrain,
             tile.fertility,
             yes_no(tile.tilled),
+            tile.water_level,
             crop,
             if jobs.is_empty() { "None" } else { &jobs },
         );
@@ -586,9 +594,9 @@ fn inspector_text(session: &GameSession) -> String {
         .iter()
         .map(|robot| {
             format!(
-                "#{:02} {:?}  {:>3.0}%  {:?}",
+                "#{:02} {:<20} {:>3.0}%  {:?}",
                 robot.id,
-                robot.body,
+                robot.def_id,
                 robot.battery / robot.battery_capacity * 100.0,
                 short_robot_state(&robot.state),
             )

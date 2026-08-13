@@ -14,7 +14,7 @@ use crate::{
     calculate_autonomy_report,
 };
 
-pub const SAVE_VERSION: u32 = 1;
+pub const SAVE_VERSION: u32 = 2;
 const MAP_SIZE: u32 = 64;
 const MAX_EVENTS: usize = 80;
 
@@ -124,23 +124,28 @@ impl GameSimulation {
 
         simulation.activate_contract(0);
         for (kind, position) in [
-            (FacilityKind::Warehouse, TilePos::new(29, 29)),
-            (FacilityKind::ChargingStation, TilePos::new(31, 29)),
-            (FacilityKind::ShippingDock, TilePos::new(33, 29)),
-            (FacilityKind::Packer, TilePos::new(29, 31)),
-            (FacilityKind::SolarGenerator, TilePos::new(31, 31)),
-            (FacilityKind::Battery, TilePos::new(33, 31)),
-            (FacilityKind::WaterPump, TilePos::new(35, 29)),
-            (FacilityKind::IrrigationNode, TilePos::new(18, 16)),
+            (FacilityKind::Warehouse, TilePos::new(25, 14)),
+            (FacilityKind::ChargingStation, TilePos::new(27, 14)),
+            (FacilityKind::ShippingDock, TilePos::new(29, 14)),
+            (FacilityKind::Packer, TilePos::new(25, 16)),
+            (FacilityKind::SolarGenerator, TilePos::new(27, 16)),
+            (FacilityKind::Battery, TilePos::new(29, 16)),
+            (FacilityKind::WaterPump, TilePos::new(25, 18)),
+            (FacilityKind::IrrigationNode, TilePos::new(23, 18)),
         ] {
             simulation.spawn_facility_unchecked(kind, position);
         }
-        simulation.spawn_robot_unchecked("basic_rover", TilePos::new(31, 29));
-        simulation.spawn_robot_unchecked("basic_rover", TilePos::new(31, 29));
-        simulation.spawn_robot_unchecked("pollination_drone", TilePos::new(31, 29));
-        simulation.create_zone_unchecked(TilePos::new(10, 10), (5, 5), "wheat", 70);
+        for robot_id in [
+            "paddy_rover",
+            "rice_transplanter",
+            "pest_control_drone",
+            "rice_harvester",
+        ] {
+            simulation.spawn_robot_unchecked(robot_id, TilePos::new(27, 14));
+        }
+        simulation.create_zone_unchecked(TilePos::new(12, 14), (10, 8), "rice", 85);
         simulation.push_event(FarmEvent::Info(
-            "Starter systems online. Robots are claiming wheat jobs automatically.".to_owned(),
+            "Rice cell online: prepare, flood, transplant, protect, then harvest.".to_owned(),
         ));
         Ok(simulation)
     }
@@ -523,10 +528,19 @@ impl GameSimulation {
             let Some(crop) = tile.crop.as_mut() else {
                 continue;
             };
-            match self.weather {
-                Weather::Rain => crop.moisture = crop.moisture.saturating_add(9).min(100),
-                Weather::Hot => crop.moisture = crop.moisture.saturating_sub(4),
-                Weather::Clear => crop.moisture = crop.moisture.saturating_sub(2),
+            if crop.crop_id == "rice" {
+                tile.water_level = match self.weather {
+                    Weather::Rain => tile.water_level.saturating_add(6).min(100),
+                    Weather::Hot => tile.water_level.saturating_sub(3),
+                    Weather::Clear => tile.water_level.saturating_sub(1),
+                };
+                crop.moisture = tile.water_level;
+            } else {
+                match self.weather {
+                    Weather::Rain => crop.moisture = crop.moisture.saturating_add(9).min(100),
+                    Weather::Hot => crop.moisture = crop.moisture.saturating_sub(4),
+                    Weather::Clear => crop.moisture = crop.moisture.saturating_sub(2),
+                }
             }
             if crop.moisture == 0 {
                 crop.health = crop.health.saturating_sub(4);
@@ -542,6 +556,7 @@ impl GameSimulation {
 
     fn update_crops(&mut self) {
         let inspection_tick = self.clock.minute.is_multiple_of(45);
+        let pest_tick = self.clock.minute.is_multiple_of(15);
         let mut ready_positions = Vec::new();
         let mut critical_positions = Vec::new();
         for y in 0..self.grid.height {
@@ -558,6 +573,16 @@ impl GameSimulation {
                 };
                 if inspection_tick && definition.needs_inspection {
                     crop.inspection_due = true;
+                }
+                if pest_tick
+                    && definition.needs_pest_control
+                    && crop.stage_index >= 2
+                    && !crop.pest_controlled
+                {
+                    crop.pest_pressure = crop.pest_pressure.saturating_add(12).min(100);
+                    if crop.pest_pressure >= 60 {
+                        crop.health = crop.health.saturating_sub(2);
+                    }
                 }
                 if crop.moisture == 0 || crop.health == 0 {
                     critical_positions.push(position);
@@ -626,20 +651,25 @@ impl GameSimulation {
 
     fn required_job(&self, position: TilePos, zone: &FieldZone) -> Option<JobKind> {
         let tile = self.grid.tile(position)?;
+        let zone_definition = self.catalog.crops.get(&zone.crop_id)?;
         if tile.crop.is_none() {
-            return if tile.tilled {
-                Some(if zone.crop_id == "wheat" {
-                    JobKind::Seed
-                } else {
-                    JobKind::Plant
-                })
-            } else {
-                Some(JobKind::Till)
-            };
+            if !tile.tilled {
+                return Some(JobKind::Till);
+            }
+            if zone_definition.requires_flooded_field && tile.water_level < 60 {
+                return Some(JobKind::FloodPaddy);
+            }
+            return Some(match zone_definition.plant_capability {
+                Capability::Seed => JobKind::Seed,
+                Capability::Transplant => JobKind::Transplant,
+                _ => JobKind::Plant,
+            });
         }
         let crop = tile.crop.as_ref()?;
         let definition = self.catalog.crops.get(&crop.crop_id)?;
-        if crop.moisture < definition.water_threshold {
+        if crop.moisture < definition.water_threshold
+            || (definition.requires_flooded_field && tile.water_level < definition.water_threshold)
+        {
             return Some(JobKind::Water);
         }
         if definition.needs_pollination && crop.stage_index >= 1 && !crop.pollinated {
@@ -647,6 +677,9 @@ impl GameSimulation {
         }
         if definition.needs_inspection && crop.inspection_due {
             return Some(JobKind::Inspect);
+        }
+        if definition.needs_pest_control && crop.stage_index >= 2 && !crop.pest_controlled {
+            return Some(JobKind::PestControl);
         }
         if crop.stage_index + 1 == definition.stages.len() {
             return Some(match definition.harvest_capability {
@@ -825,7 +858,7 @@ impl GameSimulation {
             .iter()
             .find(|zone| zone.id == job.zone_id)
             .map(|zone| zone.crop_id.clone())
-            .unwrap_or_else(|| "wheat".to_owned());
+            .unwrap_or_else(|| "rice".to_owned());
         let crop_definition = self.catalog.crops.get(&zone_crop).cloned();
         let mut harvested: Option<(String, u32)> = None;
         if let Some(tile) = self.grid.tile_mut(job.location) {
@@ -833,8 +866,15 @@ impl GameSimulation {
                 JobKind::Till => {
                     tile.tilled = true;
                     tile.terrain = TerrainKind::Soil;
+                    tile.water_level = 0;
                 }
-                JobKind::Seed | JobKind::Plant => {
+                JobKind::FloodPaddy => {
+                    tile.water_level = 100;
+                    tile.moisture = 100;
+                    self.water.available_water = (self.water.available_water - 5.0).max(0.0);
+                    self.metrics.water_consumed += 5;
+                }
+                JobKind::Seed | JobKind::Plant | JobKind::Transplant => {
                     if let Some(definition) = crop_definition {
                         tile.crop = Some(CropInstance {
                             crop_id: definition.id,
@@ -844,6 +884,8 @@ impl GameSimulation {
                             health: 100,
                             pollinated: false,
                             inspection_due: definition.needs_inspection,
+                            pest_pressure: 0,
+                            pest_controlled: !definition.needs_pest_control,
                             remaining_harvests: definition.harvest_count,
                         });
                         tile.fertility = tile.fertility.saturating_sub(definition.fertility_cost);
@@ -852,6 +894,10 @@ impl GameSimulation {
                 JobKind::Water => {
                     if let Some(crop) = tile.crop.as_mut() {
                         crop.moisture = crop.moisture.saturating_add(60).min(100);
+                        if crop.crop_id == "rice" {
+                            tile.water_level = tile.water_level.saturating_add(65).min(100);
+                            crop.moisture = tile.water_level;
+                        }
                     }
                     self.water.available_water = (self.water.available_water - 3.0).max(0.0);
                     self.metrics.water_consumed += 3;
@@ -867,6 +913,13 @@ impl GameSimulation {
                         crop.health = crop.health.saturating_add(5).min(100);
                     }
                 }
+                JobKind::PestControl => {
+                    if let Some(crop) = tile.crop.as_mut() {
+                        crop.pest_pressure = 0;
+                        crop.pest_controlled = true;
+                        crop.health = crop.health.saturating_add(3).min(100);
+                    }
+                }
                 JobKind::Harvest | JobKind::PrecisionHarvest | JobKind::Dig => {
                     if let Some(crop) = tile.crop.as_mut()
                         && let Some(definition) = self.catalog.crops.get(&crop.crop_id)
@@ -878,6 +931,8 @@ impl GameSimulation {
                             crop.stage_progress = 0;
                             crop.pollinated = !definition.needs_pollination;
                             crop.inspection_due = definition.needs_inspection;
+                            crop.pest_pressure = 0;
+                            crop.pest_controlled = !definition.needs_pest_control;
                         } else {
                             tile.crop = None;
                         }
@@ -1401,6 +1456,8 @@ mod tests {
             health: 100,
             pollinated: false,
             inspection_due: false,
+            pest_pressure: 0,
+            pest_controlled: true,
             remaining_harvests: 1,
         });
         simulation.advance_minutes(45);
@@ -1429,6 +1486,8 @@ mod tests {
             health: 20,
             pollinated: false,
             inspection_due: false,
+            pest_pressure: 0,
+            pest_controlled: true,
             remaining_harvests: 1,
         });
         simulation.update_environment();
@@ -1457,6 +1516,8 @@ mod tests {
             health: 100,
             pollinated: false,
             inspection_due: false,
+            pest_pressure: 0,
+            pest_controlled: true,
             remaining_harvests: 3,
         });
         simulation.advance_minutes(30);
@@ -1470,7 +1531,7 @@ mod tests {
     }
 
     #[test]
-    fn scheduler_assigns_pollination_to_drone_not_rover() -> Result<(), SimulationError> {
+    fn scheduler_assigns_pest_control_to_drone_not_rover() -> Result<(), SimulationError> {
         let mut simulation = simulation()?;
         simulation.jobs.clear();
         for robot in &mut simulation.robots {
@@ -1479,9 +1540,9 @@ mod tests {
         }
         simulation.jobs.push(Job {
             id: 999,
-            kind: JobKind::Pollinate,
+            kind: JobKind::PestControl,
             location: TilePos::new(12, 12),
-            required_capability: Capability::Pollinate,
+            required_capability: Capability::PestControl,
             priority: 90,
             zone_id: 1,
             created_at: 0,
@@ -1499,6 +1560,63 @@ mod tests {
                 .map(|robot| robot.body)
         });
         assert_eq!(body, Some(RobotBody::Flying));
+        Ok(())
+    }
+
+    #[test]
+    fn rice_field_requests_jobs_in_cultivation_order() -> Result<(), SimulationError> {
+        let mut simulation = simulation()?;
+        let zone = simulation
+            .zones
+            .first()
+            .cloned()
+            .ok_or_else(|| missing("starter rice zone should exist"))?;
+        let position = zone.origin;
+        assert_eq!(
+            simulation.required_job(position, &zone),
+            Some(JobKind::Till)
+        );
+
+        let tile = simulation
+            .grid
+            .tile_mut(position)
+            .ok_or_else(|| missing("starter rice tile should exist"))?;
+        tile.tilled = true;
+        assert_eq!(
+            simulation.required_job(position, &zone),
+            Some(JobKind::FloodPaddy)
+        );
+
+        let tile = simulation
+            .grid
+            .tile_mut(position)
+            .ok_or_else(|| missing("starter rice tile should exist"))?;
+        tile.water_level = 100;
+        assert_eq!(
+            simulation.required_job(position, &zone),
+            Some(JobKind::Transplant)
+        );
+
+        let tile = simulation
+            .grid
+            .tile_mut(position)
+            .ok_or_else(|| missing("starter rice tile should exist"))?;
+        tile.crop = Some(CropInstance {
+            crop_id: "rice".to_owned(),
+            stage_index: 2,
+            stage_progress: 0,
+            moisture: 100,
+            health: 100,
+            pollinated: false,
+            inspection_due: false,
+            pest_pressure: 36,
+            pest_controlled: false,
+            remaining_harvests: 1,
+        });
+        assert_eq!(
+            simulation.required_job(position, &zone),
+            Some(JobKind::PestControl)
+        );
         Ok(())
     }
 
@@ -1550,6 +1668,8 @@ mod tests {
             health: 100,
             pollinated: false,
             inspection_due: false,
+            pest_pressure: 0,
+            pest_controlled: true,
             remaining_harvests: 1,
         });
         simulation.advance_minutes(140);
@@ -1574,7 +1694,7 @@ mod tests {
     #[test]
     fn contract_completes_after_delivery() -> Result<(), SimulationError> {
         let mut simulation = simulation()?;
-        simulation.inventory.add("packed_wheat", 100);
+        simulation.inventory.add("packed_rice", 120);
         simulation.update_economy();
         assert_eq!(
             simulation.contracts.first().map(|contract| contract.status),
@@ -1585,15 +1705,15 @@ mod tests {
     }
 
     #[test]
-    fn starter_farm_completes_wheat_contract_automatically() -> Result<(), SimulationError> {
+    fn starter_farm_completes_rice_contract_automatically() -> Result<(), SimulationError> {
         let mut simulation = simulation()?;
         simulation.advance_minutes(2_800);
         assert_eq!(
             simulation.contracts.first().map(|contract| contract.status),
             Some(ContractStatus::Completed)
         );
-        assert!(simulation.metrics.crops_produced >= 100);
-        assert!(simulation.metrics.packed_items >= 100);
+        assert!(simulation.metrics.crops_produced >= 120);
+        assert!(simulation.metrics.packed_items >= 120);
         Ok(())
     }
 

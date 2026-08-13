@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use autofarm_editor::PreviewKind;
-use autofarm_sim::{FacilityKind, RobotBody, TilePos};
+use autofarm_sim::{CropInstance, FacilityKind, JobKind, Robot, RobotBody, RobotState, TilePos};
 use bevy::prelude::*;
 
 use crate::{
@@ -9,7 +9,7 @@ use crate::{
     theme,
 };
 
-const TILE_SIZE: f32 = 12.0;
+const TILE_SIZE: f32 = 32.0;
 
 pub struct FarmRenderPlugin;
 
@@ -21,9 +21,12 @@ impl Plugin for FarmRenderPlugin {
                 Update,
                 (
                     update_tile_visuals,
+                    sync_crop_visuals,
                     sync_robot_visuals,
+                    sync_work_effects,
                     sync_facility_visuals,
                     sync_zone_visuals,
+                    sync_selection_visual,
                     sync_editor_preview,
                 ),
             );
@@ -34,10 +37,55 @@ impl Plugin for FarmRenderPlugin {
 struct VisualCache {
     tile_minute: u64,
     tile_revision: u64,
+    crop_minute: u64,
+    crop_revision: u64,
+}
+
+#[derive(Resource)]
+struct PixelArtAssets {
+    paddy_water: Handle<Image>,
+    rice_stages: [Handle<Image>; 6],
+    paddy_rover: Handle<Image>,
+    rice_transplanter: Handle<Image>,
+    pest_control_drone: Handle<Image>,
+    rice_harvester: Handle<Image>,
+}
+
+impl PixelArtAssets {
+    fn load(assets: &AssetServer) -> Self {
+        Self {
+            paddy_water: assets.load("art/pixel/paddy-water.png"),
+            rice_stages: [
+                assets.load("art/pixel/rice-stage-0.png"),
+                assets.load("art/pixel/rice-stage-1.png"),
+                assets.load("art/pixel/rice-stage-2.png"),
+                assets.load("art/pixel/rice-stage-3.png"),
+                assets.load("art/pixel/rice-stage-4.png"),
+                assets.load("art/pixel/rice-stage-5.png"),
+            ],
+            paddy_rover: assets.load("art/pixel/paddy-rover.png"),
+            rice_transplanter: assets.load("art/pixel/rice-transplanter.png"),
+            pest_control_drone: assets.load("art/pixel/pest-control-drone.png"),
+            rice_harvester: assets.load("art/pixel/rice-harvester.png"),
+        }
+    }
+
+    fn robot(&self, def_id: &str) -> Option<Handle<Image>> {
+        match def_id {
+            "paddy_rover" => Some(self.paddy_rover.clone()),
+            "rice_transplanter" => Some(self.rice_transplanter.clone()),
+            "pest_control_drone" => Some(self.pest_control_drone.clone()),
+            "rice_harvester" => Some(self.rice_harvester.clone()),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Component)]
 struct TileVisual(TilePos);
+
+#[derive(Component)]
+struct CropVisual(TilePos);
 
 #[derive(Component)]
 struct RobotVisual(u64);
@@ -46,22 +94,30 @@ struct RobotVisual(u64);
 struct BatteryBar(u64);
 
 #[derive(Component)]
+struct WorkEffectVisual(u64);
+
+#[derive(Component)]
 struct FacilityVisual(u64);
 
 #[derive(Component)]
 struct ZoneVisual(u64);
 
 #[derive(Component)]
+struct SelectionVisual;
+
+#[derive(Component)]
 struct EditorPreviewVisual;
 
-fn setup_world(mut commands: Commands, session: Res<GameSession>) {
+fn setup_world(mut commands: Commands, session: Res<GameSession>, assets: Res<AssetServer>) {
+    commands.insert_resource(PixelArtAssets::load(&assets));
+    let focus = tile_world(TilePos::new(19, 18));
     commands.spawn((
         Camera2d,
         Projection::Orthographic(OrthographicProjection {
-            scale: 1.2,
+            scale: 0.82,
             ..OrthographicProjection::default_2d()
         }),
-        Transform::from_xyz(0.0, 0.0, 1000.0),
+        Transform::from_xyz(focus.x, focus.y, 1000.0),
         WorldCamera,
     ));
 
@@ -74,16 +130,31 @@ fn setup_world(mut commands: Commands, session: Res<GameSession>) {
                 .tile(position)
                 .map_or(theme::BACKGROUND, |tile| theme::terrain_color(tile.terrain));
             commands.spawn((
-                Sprite::from_color(color, Vec2::splat(TILE_SIZE - 0.8)),
+                Sprite::from_color(color, Vec2::splat(TILE_SIZE - 1.5)),
                 Transform::from_translation(tile_world(position).extend(0.0)),
                 TileVisual(position),
             ));
         }
     }
+    commands.spawn((
+        Sprite::from_color(theme::GOLD.with_alpha(0.28), Vec2::splat(TILE_SIZE + 3.0)),
+        Transform::from_translation(
+            session
+                .selected_tile
+                .map_or(Vec3::ZERO, |position| tile_world(position).extend(2.0)),
+        ),
+        if session.selected_tile.is_some() {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        },
+        SelectionVisual,
+    ));
 }
 
 fn update_tile_visuals(
     session: Res<GameSession>,
+    assets: Res<PixelArtAssets>,
     mut cache: ResMut<VisualCache>,
     mut tiles: Query<(&TileVisual, &mut Sprite)>,
 ) {
@@ -96,18 +167,84 @@ fn update_tile_visuals(
         let Some(tile) = session.simulation.grid.tile(visual.0) else {
             continue;
         };
-        sprite.color = tile
-            .crop
-            .as_ref()
-            .map_or_else(|| theme::terrain_color(tile.terrain), theme::crop_color);
+        sprite.custom_size = Some(Vec2::splat(TILE_SIZE - 1.5));
+        if tile.water_level > 0 {
+            sprite.image = assets.paddy_water.clone();
+            let brightness = 0.72 + f32::from(tile.water_level) / 360.0;
+            sprite.color = Color::srgb(brightness, brightness, brightness);
+        } else {
+            sprite.image = Handle::default();
+            sprite.color = if tile.tilled {
+                Color::srgb(0.24, 0.13, 0.07)
+            } else {
+                theme::terrain_color(tile.terrain)
+            };
+        }
     }
     cache.tile_minute = session.simulation.clock.minute;
     cache.tile_revision = session.simulation.world_revision;
 }
 
+fn sync_crop_visuals(
+    mut commands: Commands,
+    session: Res<GameSession>,
+    assets: Res<PixelArtAssets>,
+    mut cache: ResMut<VisualCache>,
+    mut visuals: Query<(Entity, &CropVisual, &mut Transform, &mut Sprite)>,
+) {
+    if cache.crop_minute == session.simulation.clock.minute
+        && cache.crop_revision == session.simulation.world_revision
+    {
+        return;
+    }
+
+    let mut existing = BTreeSet::new();
+    for (entity, visual, mut transform, mut sprite) in &mut visuals {
+        let Some(crop) = session
+            .simulation
+            .grid
+            .tile(visual.0)
+            .and_then(|tile| tile.crop.as_ref())
+        else {
+            commands.entity(entity).despawn();
+            continue;
+        };
+        existing.insert(visual.0);
+        configure_crop_sprite(&mut sprite, crop, &assets);
+        transform.translation = crop_world(visual.0, crop);
+    }
+
+    for y in 0..session.simulation.grid.height {
+        for x in 0..session.simulation.grid.width {
+            let position = TilePos::new(x, y);
+            if existing.contains(&position) {
+                continue;
+            }
+            let Some(crop) = session
+                .simulation
+                .grid
+                .tile(position)
+                .and_then(|tile| tile.crop.as_ref())
+            else {
+                continue;
+            };
+            let mut sprite = Sprite::default();
+            configure_crop_sprite(&mut sprite, crop, &assets);
+            commands.spawn((
+                sprite,
+                Transform::from_translation(crop_world(position, crop)),
+                CropVisual(position),
+            ));
+        }
+    }
+    cache.crop_minute = session.simulation.clock.minute;
+    cache.crop_revision = session.simulation.world_revision;
+}
+
 fn sync_robot_visuals(
     mut commands: Commands,
     session: Res<GameSession>,
+    assets: Res<PixelArtAssets>,
     mut visuals: Query<(Entity, &RobotVisual, &mut Transform, &mut Sprite)>,
     mut battery_bars: Query<(&BatteryBar, &mut Sprite, &mut Transform), Without<RobotVisual>>,
 ) {
@@ -123,18 +260,20 @@ fn sync_robot_visuals(
             continue;
         };
         existing.insert(robot.id);
-        transform.translation = tile_world(robot.position).extend(10.0);
-        sprite.color = robot_color(robot.body);
+        transform.translation = robot_world(robot);
+        configure_robot_sprite(&mut sprite, robot, &assets);
     }
     for robot in &session.simulation.robots {
         if existing.contains(&robot.id) {
             continue;
         }
-        let size = robot_size(robot.body);
+        let size = robot_size(&robot.def_id, robot.body);
+        let mut sprite = Sprite::default();
+        configure_robot_sprite(&mut sprite, robot, &assets);
         commands
             .spawn((
-                Sprite::from_color(robot_color(robot.body), size),
-                Transform::from_translation(tile_world(robot.position).extend(10.0)),
+                sprite,
+                Transform::from_translation(robot_world(robot)),
                 RobotVisual(robot.id),
             ))
             .with_children(|parent| {
@@ -155,14 +294,55 @@ fn sync_robot_visuals(
             continue;
         };
         let ratio = (robot.battery / robot.battery_capacity).clamp(0.0, 1.0);
-        let width = robot_size(robot.body).x * ratio;
+        let robot_size = robot_size(&robot.def_id, robot.body);
+        let width = robot_size.x * ratio;
         sprite.custom_size = Some(Vec2::new(width.max(0.5), 1.5));
         sprite.color = if ratio < 0.2 {
             theme::DANGER
         } else {
             theme::ACCENT
         };
-        transform.translation.x = -(robot_size(robot.body).x - width) * 0.5;
+        transform.translation.x = -(robot_size.x - width) * 0.5;
+    }
+}
+
+fn sync_work_effects(
+    mut commands: Commands,
+    session: Res<GameSession>,
+    mut visuals: Query<(Entity, &WorkEffectVisual, &mut Transform, &mut Sprite)>,
+) {
+    let mut wanted = BTreeMap::new();
+    for robot in &session.simulation.robots {
+        let RobotState::Working(job_id) = &robot.state else {
+            continue;
+        };
+        let Some(kind) = session
+            .simulation
+            .jobs
+            .iter()
+            .find(|job| job.id == *job_id)
+            .map(|job| job.kind)
+        else {
+            continue;
+        };
+        wanted.insert(robot.id, work_effect(robot.position, kind));
+    }
+
+    for (entity, visual, mut transform, mut sprite) in &mut visuals {
+        let Some((position, size, color)) = wanted.remove(&visual.0) else {
+            commands.entity(entity).despawn();
+            continue;
+        };
+        transform.translation = position;
+        sprite.custom_size = Some(size);
+        sprite.color = color;
+    }
+    for (robot_id, (position, size, color)) in wanted {
+        commands.spawn((
+            Sprite::from_color(color, size),
+            Transform::from_translation(position),
+            WorkEffectVisual(robot_id),
+        ));
     }
 }
 
@@ -191,7 +371,7 @@ fn sync_facility_visuals(
             continue;
         }
         commands.spawn((
-            Sprite::from_color(facility_color(facility.kind), Vec2::splat(TILE_SIZE - 1.5)),
+            Sprite::from_color(facility_color(facility.kind), Vec2::splat(TILE_SIZE - 5.0)),
             Transform::from_translation(tile_world(facility.position).extend(5.0)),
             FacilityVisual(facility.id),
         ));
@@ -239,6 +419,19 @@ fn sync_zone_visuals(
             Transform::from_translation(zone_center(zone.origin, zone.size).extend(1.0)),
             ZoneVisual(zone.id),
         ));
+    }
+}
+
+fn sync_selection_visual(
+    session: Res<GameSession>,
+    mut selection: Single<(&mut Transform, &mut Visibility), With<SelectionVisual>>,
+) {
+    let (transform, visibility) = &mut *selection;
+    if let Some(position) = session.selected_tile {
+        transform.translation = tile_world(position).extend(2.0);
+        **visibility = Visibility::Inherited;
+    } else {
+        **visibility = Visibility::Hidden;
     }
 }
 
@@ -307,6 +500,7 @@ fn zone_center(origin: TilePos, size: (u32, u32)) -> Vec2 {
 
 fn zone_color(crop_id: &str) -> Color {
     match crop_id {
+        "rice" => Color::srgba(0.12, 0.68, 0.80, 0.11),
         "wheat" => Color::srgba(0.95, 0.72, 0.18, 0.09),
         "potato" => Color::srgba(0.54, 0.76, 0.24, 0.09),
         "tomato" => Color::srgba(0.95, 0.22, 0.12, 0.10),
@@ -325,13 +519,97 @@ fn robot_color(body: RobotBody) -> Color {
     }
 }
 
-fn robot_size(body: RobotBody) -> Vec2 {
-    match body {
-        RobotBody::Wheeled => Vec2::new(9.5, 6.0),
-        RobotBody::Flying => Vec2::new(8.0, 8.0),
-        RobotBody::Quadruped => Vec2::new(9.0, 6.5),
-        RobotBody::Biped => Vec2::new(5.5, 9.0),
-        RobotBody::Hexapod => Vec2::new(10.0, 7.0),
+fn robot_size(def_id: &str, body: RobotBody) -> Vec2 {
+    match def_id {
+        "paddy_rover" => Vec2::splat(62.0),
+        "rice_transplanter" => Vec2::splat(66.0),
+        "pest_control_drone" => Vec2::splat(58.0),
+        "rice_harvester" => Vec2::splat(68.0),
+        _ => match body {
+            RobotBody::Wheeled => Vec2::new(27.0, 19.0),
+            RobotBody::Flying => Vec2::splat(25.0),
+            RobotBody::Quadruped => Vec2::new(28.0, 21.0),
+            RobotBody::Biped => Vec2::new(18.0, 30.0),
+            RobotBody::Hexapod => Vec2::new(30.0, 23.0),
+        },
+    }
+}
+
+fn configure_crop_sprite(sprite: &mut Sprite, crop: &CropInstance, assets: &PixelArtAssets) {
+    if crop.crop_id == "rice" {
+        let stage = crop.stage_index.min(assets.rice_stages.len() - 1);
+        sprite.image = assets.rice_stages[stage].clone();
+        let size = 42.0 + stage as f32 * 3.0;
+        sprite.custom_size = Some(Vec2::splat(size));
+        let health = 0.55 + f32::from(crop.health) / 220.0;
+        sprite.color = Color::srgb(health, health, health);
+    } else {
+        sprite.image = Handle::default();
+        sprite.custom_size = Some(Vec2::splat(21.0 + crop.stage_index as f32 * 2.0));
+        sprite.color = theme::crop_color(crop);
+    }
+}
+
+fn crop_world(position: TilePos, crop: &CropInstance) -> Vec3 {
+    let lift = if crop.crop_id == "rice" {
+        4.0 + crop.stage_index as f32
+    } else {
+        0.0
+    };
+    (tile_world(position) + Vec2::Y * lift).extend(4.0)
+}
+
+fn configure_robot_sprite(sprite: &mut Sprite, robot: &Robot, assets: &PixelArtAssets) {
+    sprite.custom_size = Some(robot_size(&robot.def_id, robot.body));
+    if let Some(image) = assets.robot(&robot.def_id) {
+        sprite.image = image;
+        sprite.color = Color::WHITE;
+    } else {
+        sprite.image = Handle::default();
+        sprite.color = robot_color(robot.body);
+    }
+}
+
+fn robot_world(robot: &Robot) -> Vec3 {
+    let lift = if robot.body == RobotBody::Flying {
+        14.0
+    } else {
+        7.0
+    };
+    (tile_world(robot.position) + Vec2::Y * lift).extend(10.0)
+}
+
+fn work_effect(position: TilePos, kind: JobKind) -> (Vec3, Vec2, Color) {
+    let center = tile_world(position);
+    match kind {
+        JobKind::Till => (
+            (center - Vec2::Y * 9.0).extend(8.0),
+            Vec2::new(44.0, 9.0),
+            Color::srgba(0.92, 0.48, 0.16, 0.72),
+        ),
+        JobKind::FloodPaddy | JobKind::Water => (
+            center.extend(8.0),
+            Vec2::new(48.0, 6.0),
+            Color::srgba(0.18, 0.82, 1.0, 0.78),
+        ),
+        JobKind::Transplant | JobKind::Plant | JobKind::Seed => (
+            (center - Vec2::Y * 10.0).extend(8.0),
+            Vec2::new(24.0, 7.0),
+            Color::srgba(0.42, 1.0, 0.38, 0.84),
+        ),
+        JobKind::PestControl | JobKind::Pollinate | JobKind::Inspect => (
+            (center - Vec2::Y * 15.0).extend(11.0),
+            Vec2::new(4.0, 38.0),
+            Color::srgba(0.18, 0.96, 1.0, 0.86),
+        ),
+        JobKind::Harvest | JobKind::PrecisionHarvest | JobKind::Dig => (
+            (center - Vec2::Y * 10.0).extend(8.0),
+            Vec2::new(50.0, 8.0),
+            Color::srgba(1.0, 0.76, 0.16, 0.86),
+        ),
+        JobKind::Haul | JobKind::Repair | JobKind::Recharge | JobKind::Pack => {
+            (center.extend(8.0), Vec2::splat(10.0), theme::ACCENT)
+        }
     }
 }
 
