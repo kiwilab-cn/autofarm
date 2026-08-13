@@ -1,6 +1,6 @@
 # AUTOFARM
 
-AUTOFARM is a playable 2D automation-farming vertical slice built with Rust and Bevy 0.19. You design crop zones, expand a mixed robot fleet, let AI farm managers tune priorities, and prove that the farm can run without manual intervention.
+AUTOFARM is a playable 2D automation-farming vertical slice built with Rust and Bevy 0.19. The starter scenario follows one autonomous rice cell from paddy preparation through transplanting, pest control, harvest, packing, and delivery.
 
 ## Run
 
@@ -34,7 +34,14 @@ The default `MockLlmProvider` needs no API key. Remote-provider settings are rea
 | `S` / `L` | Save / load `autofarm-save.ron` |
 | `Esc` | Close overlays or quit |
 
-The left build panel and bottom hint bar mirror these controls. The starter map already contains a small wheat field so the first autonomous production loop is visible immediately.
+The left build panel and bottom hint bar mirror these controls. The camera opens on a 10×8 flooded paddy with large 32-pixel tiles, six visible rice growth stages, and a role-specific fleet:
+
+- the wheeled paddy rover tills, floods, and maintains water levels;
+- the six-legged transplanter places seedlings;
+- the quadcopter sprays or uses its laser to clear pests;
+- the tracked harvester collects mature golden rice.
+
+All four machines claim typed jobs automatically. Select a tile to inspect paddy water, crop health, pest pressure, current growth stage, and queued work.
 
 ## Architecture
 
@@ -49,7 +56,7 @@ autofarm-sim <- autofarm-ai <- autofarm-editor <- autofarm-app
 - `src/editor`: natural-language demo intents, permission-aware preview/apply, world-revision checks, and undo.
 - `src/app`: Bevy plugins, 2D rendering, UI, camera/input, and visual feedback.
 - `assets/data`: RON content definitions for crops, robots, and contracts.
-- `assets/art`: generated project artwork used by the title screen.
+- `assets/art`: generated project artwork for the title screen, rice stages, paddy water, and the specialist robot fleet.
 
 The LLM boundary never receives raw ECS state and never mutates the world. AI output becomes a typed `GameCommand`, passes permission and world-revision validation, and only then enters the simulation.
 

@@ -1,11 +1,11 @@
 [
     (
-        id: "starter_wheat",
-        display_name: "Starter Wheat",
-        requirements: [(item: "packed_wheat", amount: 100)],
-        deadline_minutes: 2880,
-        reward: 1500,
-        reputation: 10,
+        id: "starter_rice",
+        display_name: "First Autonomous Rice Harvest",
+        requirements: [(item: "packed_rice", amount: 120)],
+        deadline_minutes: 4320,
+        reward: 2400,
+        reputation: 18,
     ),
     (
         id: "potato_rush",

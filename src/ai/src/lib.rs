@@ -394,6 +394,7 @@ fn aster_profile() -> NpcProfile {
             micromanagement: 0.90,
             sociability: 0.45,
             crop_affinity: BTreeMap::from([
+                ("rice".to_owned(), 1.0),
                 ("wheat".to_owned(), 1.0),
                 ("potato".to_owned(), 0.85),
                 ("tomato".to_owned(), 0.35),
@@ -417,6 +418,7 @@ fn mira_profile() -> NpcProfile {
             micromanagement: 0.70,
             sociability: 0.85,
             crop_affinity: BTreeMap::from([
+                ("rice".to_owned(), 0.92),
                 ("wheat".to_owned(), 0.30),
                 ("potato".to_owned(), 0.40),
                 ("tomato".to_owned(), 0.95),
@@ -430,7 +432,7 @@ fn mira_profile() -> NpcProfile {
 fn default_mandate() -> NpcMandate {
     NpcMandate {
         managed_zones: BTreeSet::new(),
-        allowed_crops: ["wheat", "potato", "tomato", "strawberry"]
+        allowed_crops: ["rice", "wheat", "potato", "tomato", "strawberry"]
             .into_iter()
             .map(str::to_owned)
             .collect(),
