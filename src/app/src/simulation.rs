@@ -7,7 +7,7 @@ pub struct SimulationPlugin;
 
 impl Plugin for SimulationPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(Time::<Fixed>::from_hz(10.0))
+        app.insert_resource(Time::<Fixed>::from_hz(2.0))
             .add_systems(FixedUpdate, tick_simulation)
             .add_systems(Update, detect_trial_completion);
     }
@@ -19,8 +19,8 @@ fn tick_simulation(mut session: ResMut<GameSession>) {
     }
     session.simulation.tick();
     let minute = session.simulation.clock.minute;
-    if minute.saturating_sub(session.last_npc_review) >= 60 {
-        let npc_id = if (minute / 60).is_multiple_of(2) {
+    if minute.saturating_sub(session.last_npc_review) >= 360 {
+        let npc_id = if (minute / 360).is_multiple_of(2) {
             "aster"
         } else {
             "mira"
