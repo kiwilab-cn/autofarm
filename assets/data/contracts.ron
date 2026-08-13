@@ -1,0 +1,37 @@
+[
+    (
+        id: "starter_wheat",
+        display_name: "Starter Wheat",
+        requirements: [(item: "packed_wheat", amount: 100)],
+        deadline_minutes: 2880,
+        reward: 1500,
+        reputation: 10,
+    ),
+    (
+        id: "potato_rush",
+        display_name: "Potato Rush",
+        requirements: [(item: "packed_potato", amount: 80)],
+        deadline_minutes: 3200,
+        reward: 2100,
+        reputation: 15,
+    ),
+    (
+        id: "fresh_tomato",
+        display_name: "Fresh Tomato",
+        requirements: [(item: "packed_tomato", amount: 50)],
+        deadline_minutes: 3600,
+        reward: 2900,
+        reputation: 20,
+    ),
+    (
+        id: "premium_basket",
+        display_name: "Premium Basket",
+        requirements: [
+            (item: "packed_tomato", amount: 30),
+            (item: "packed_strawberry", amount: 20),
+        ],
+        deadline_minutes: 4320,
+        reward: 4200,
+        reputation: 30,
+    ),
+]
