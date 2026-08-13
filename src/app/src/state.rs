@@ -35,7 +35,7 @@ impl GameSession {
             editor: EditorController::default(),
             screen: ScreenMode::MainMenu,
             selected_crop: 0,
-            selected_tile: None,
+            selected_tile: Some(TilePos::new(12, 14)),
             drag_start: None,
             robot_purchase_cursor: 0,
             facility_build_cursor: 0,
@@ -48,7 +48,7 @@ impl GameSession {
 
     #[must_use]
     pub fn crop_id(&self) -> &'static str {
-        ["wheat", "potato", "tomato", "strawberry"][self.selected_crop % 4]
+        ["rice", "wheat", "potato", "tomato", "strawberry"][self.selected_crop % 5]
     }
 }
 

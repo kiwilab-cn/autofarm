@@ -41,7 +41,9 @@ fn handle_session_keys(
                 commands.entity(entity).despawn();
             }
             session.screen = ScreenMode::Playing;
-            session.status = "Starter map online. Drag a field or watch the wheat loop.".to_owned();
+            session.status =
+                "Rice cell online. Watch prepare → flood → transplant → protect → harvest."
+                    .to_owned();
         }
         if keyboard.just_pressed(KeyCode::Escape) {
             exit.write(AppExit::Success);
@@ -147,7 +149,7 @@ fn process_ui_actions(mut session: ResMut<GameSession>, mut queue: ResMut<UiActi
 fn execute_action(session: &mut GameSession, action: UiAction) {
     match action {
         UiAction::CycleCrop => {
-            session.selected_crop = (session.selected_crop + 1) % 4;
+            session.selected_crop = (session.selected_crop + 1) % 5;
             session.status = format!("Field crop selected: {}", session.crop_id());
         }
         UiAction::BuyRobot => buy_robot(session),
@@ -162,6 +164,10 @@ fn execute_action(session: &mut GameSession, action: UiAction) {
 
 fn buy_robot(session: &mut GameSession) {
     let robot_ids = [
+        "paddy_rover",
+        "rice_transplanter",
+        "pest_control_drone",
+        "rice_harvester",
         "basic_rover",
         "pollination_drone",
         "field_quadruped",
@@ -185,11 +191,11 @@ fn buy_robot(session: &mut GameSession) {
 
 fn build_facility(session: &mut GameSession) {
     let candidates = [
-        (FacilityKind::SeedStorage, TilePos::new(35, 31)),
-        (FacilityKind::IrrigationNode, TilePos::new(18, 20)),
-        (FacilityKind::SolarGenerator, TilePos::new(37, 29)),
-        (FacilityKind::Battery, TilePos::new(37, 31)),
-        (FacilityKind::Packer, TilePos::new(29, 33)),
+        (FacilityKind::SeedStorage, TilePos::new(25, 20)),
+        (FacilityKind::IrrigationNode, TilePos::new(23, 20)),
+        (FacilityKind::SolarGenerator, TilePos::new(27, 20)),
+        (FacilityKind::Battery, TilePos::new(29, 20)),
+        (FacilityKind::Packer, TilePos::new(25, 22)),
     ];
     let missing: Vec<_> = candidates
         .into_iter()
@@ -312,9 +318,9 @@ fn move_camera(
         direction.x += 1.0;
     }
     if direction != Vec2::ZERO {
-        let delta = direction.normalize() * 340.0 * time.delta_secs();
-        camera.translation.x = (camera.translation.x + delta.x).clamp(-260.0, 260.0);
-        camera.translation.y = (camera.translation.y + delta.y).clamp(-260.0, 260.0);
+        let delta = direction.normalize() * 520.0 * time.delta_secs();
+        camera.translation.x = (camera.translation.x + delta.x).clamp(-920.0, 920.0);
+        camera.translation.y = (camera.translation.y + delta.y).clamp(-920.0, 920.0);
     }
 }
 
@@ -328,7 +334,7 @@ fn zoom_camera(
         return;
     }
     if let Projection::Orthographic(orthographic) = &mut **projection {
-        orthographic.scale = (orthographic.scale * (1.0 - scroll.delta.y * 0.08)).clamp(0.55, 2.4);
+        orthographic.scale = (orthographic.scale * (1.0 - scroll.delta.y * 0.08)).clamp(0.48, 1.8);
     }
 }
 

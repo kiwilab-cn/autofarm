@@ -71,6 +71,9 @@ pub struct CropDef {
     pub fertility_cost: u8,
     pub needs_pollination: bool,
     pub needs_inspection: bool,
+    pub plant_capability: Capability,
+    pub requires_flooded_field: bool,
+    pub needs_pest_control: bool,
     pub harvest_capability: Capability,
     pub harvest_count: u8,
     pub harvest_yield: u32,
@@ -93,6 +96,8 @@ pub struct CropInstance {
     pub health: u8,
     pub pollinated: bool,
     pub inspection_due: bool,
+    pub pest_pressure: u8,
+    pub pest_controlled: bool,
     pub remaining_harvests: u8,
 }
 
@@ -105,6 +110,7 @@ pub struct Tile {
     pub building: Option<EntityId>,
     pub occupied: bool,
     pub tilled: bool,
+    pub water_level: u8,
 }
 
 impl Tile {
@@ -118,6 +124,7 @@ impl Tile {
             building: None,
             occupied: false,
             tilled: false,
+            water_level: 0,
         }
     }
 }
@@ -194,8 +201,10 @@ impl FarmGrid {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Capability {
     Till,
+    FloodPaddy,
     Seed,
     Plant,
+    Transplant,
     Water,
     Pollinate,
     Inspect,
@@ -206,6 +215,7 @@ pub enum Capability {
     Repair,
     Pack,
     Spray,
+    PestControl,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -309,11 +319,14 @@ pub struct Robot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum JobKind {
     Till,
+    FloodPaddy,
     Seed,
     Plant,
+    Transplant,
     Water,
     Pollinate,
     Inspect,
+    PestControl,
     Harvest,
     PrecisionHarvest,
     Dig,
@@ -328,11 +341,14 @@ impl JobKind {
     pub const fn required_capability(self) -> Capability {
         match self {
             Self::Till => Capability::Till,
+            Self::FloodPaddy => Capability::FloodPaddy,
             Self::Seed => Capability::Seed,
             Self::Plant => Capability::Plant,
+            Self::Transplant => Capability::Transplant,
             Self::Water => Capability::Water,
             Self::Pollinate => Capability::Pollinate,
             Self::Inspect => Capability::Inspect,
+            Self::PestControl => Capability::PestControl,
             Self::Harvest => Capability::Harvest,
             Self::PrecisionHarvest => Capability::PrecisionHarvest,
             Self::Dig => Capability::Dig,
@@ -347,8 +363,17 @@ impl JobKind {
     pub const fn effort(self) -> f32 {
         match self {
             Self::Dig | Self::Repair => 4.0,
-            Self::Harvest | Self::PrecisionHarvest | Self::Till => 3.0,
-            Self::Seed | Self::Plant | Self::Water | Self::Pollinate | Self::Inspect => 2.0,
+            Self::Harvest
+            | Self::PrecisionHarvest
+            | Self::Till
+            | Self::FloodPaddy
+            | Self::Transplant => 3.0,
+            Self::Seed
+            | Self::Plant
+            | Self::Water
+            | Self::Pollinate
+            | Self::Inspect
+            | Self::PestControl => 2.0,
             Self::Haul | Self::Recharge | Self::Pack => 1.0,
         }
     }
