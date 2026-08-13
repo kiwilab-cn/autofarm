@@ -41,8 +41,9 @@ pub(crate) fn next_ground_step(
             if !is_passable(grid, neighbor, body) {
                 continue;
             }
-            let step_cost = match grid.tile(neighbor).map(|tile| tile.terrain) {
-                Some(TerrainKind::RoughSoil) => 3,
+            let step_cost = match (grid.tile(neighbor).map(|tile| tile.terrain), body) {
+                (Some(TerrainKind::RoughSoil), RobotBody::Wheeled) => 6,
+                (Some(TerrainKind::RoughSoil), _) => 3,
                 _ => 1,
             };
             let next_cost = current_cost.saturating_add(step_cost);
@@ -84,11 +85,9 @@ fn neighbors(grid: &FarmGrid, position: TilePos) -> impl Iterator<Item = TilePos
     [left, up, right, down].into_iter().flatten()
 }
 
-fn is_passable(grid: &FarmGrid, position: TilePos, body: RobotBody) -> bool {
-    grid.tile(position).is_some_and(|tile| {
-        !matches!(tile.terrain, TerrainKind::Water | TerrainKind::Rock)
-            && !(body == RobotBody::Wheeled && tile.terrain == TerrainKind::RoughSoil)
-    })
+fn is_passable(grid: &FarmGrid, position: TilePos, _body: RobotBody) -> bool {
+    grid.tile(position)
+        .is_some_and(|tile| !matches!(tile.terrain, TerrainKind::Water | TerrainKind::Rock))
 }
 
 fn index_position(grid: &FarmGrid, index: usize) -> TilePos {

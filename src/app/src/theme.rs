@@ -30,6 +30,8 @@ pub fn terrain_color(terrain: TerrainKind) -> Color {
 pub fn crop_color(crop: &CropInstance) -> Color {
     let health_scale = f32::from(crop.health) / 100.0;
     let base = match crop.crop_id.as_str() {
+        "rice" if crop.stage_index >= 4 => [0.98, 0.72, 0.12],
+        "rice" => [0.42, 0.88, 0.22],
         "wheat" => [0.93, 0.69, 0.18],
         "potato" => [0.45, 0.65, 0.22],
         "tomato" => [0.90, 0.20, 0.12],
