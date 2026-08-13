@@ -1,0 +1,4 @@
+/target/
+*.ron.tmp
+autofarm-save.ron
+.DS_Store
