@@ -150,7 +150,7 @@ fn spawn_hud(mut commands: Commands) {
             .with_children(|panel| {
                 panel.spawn(label("RICE OPERATIONS", 17.0, theme::ACCENT));
                 panel.spawn(label(
-                    "01 PADDY ROVER  — EMPTY-FIELD PREP\n02 SIX-LEGGER   — PLANT + FIELD CARE\n03 QUADCOPTER   — SPRAY + LASER\n04 HARVESTER    — RIPE CROP ONLY",
+                    "01 PADDY ROVER  — PLOW → TILL → FLOOD\n02 SIX-LEGGER   — PLANT + FIELD CARE\n03 QUADCOPTER   — SPRAY + LASER\n04 HARVESTER    — RIPE CROP ONLY\nGARAGE DEPARTURE / COLLISION QUEUE ACTIVE",
                     12.0,
                     theme::GOLD,
                 ));
@@ -568,11 +568,12 @@ fn inspector_text(session: &GameSession) -> String {
             .collect::<Vec<_>>()
             .join(", ");
         return format!(
-            "\nTILE {}, {}\nTerrain: {:?}\nFertility: {}%\nTilled: {}\nPaddy water: {}%\n\nCROP\n{}\n\nJOBS\n{}",
+            "\nTILE {}, {}\nTerrain: {:?}\nFertility: {}%\nPlowed: {}  Tilled: {}\nPaddy water: {}%\n\nCROP\n{}\n\nJOBS\n{}",
             position.x,
             position.y,
             tile.terrain,
             tile.fertility,
+            yes_no(tile.plowed),
             yes_no(tile.tilled),
             tile.water_level,
             crop,
@@ -664,12 +665,17 @@ fn event_text(event: &FarmEvent) -> String {
 
 fn short_robot_state(state: &RobotState) -> &'static str {
     match state {
+        RobotState::Parked => "GARAGE",
         RobotState::Idle => "IDLE",
+        RobotState::Departing(_) => "DEPLOY",
         RobotState::MovingToJob(_) => "MOVE",
+        RobotState::Preparing(_) => "SETUP",
         RobotState::Working(_) => "WORK",
+        RobotState::Finishing(_) => "STOW",
         RobotState::MovingToCharge => "CHARGE→",
         RobotState::Charging => "CHARGING",
         RobotState::MovingToStorage => "HAUL",
+        RobotState::ReturningToGarage => "GARAGE←",
         RobotState::Broken => "BROKEN",
     }
 }

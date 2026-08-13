@@ -23,6 +23,11 @@ pub fn terrain_color(terrain: TerrainKind) -> Color {
         TerrainKind::Water => Color::srgb(0.08, 0.34, 0.43),
         TerrainKind::Rock => Color::srgb(0.25, 0.29, 0.28),
         TerrainKind::Concrete => Color::srgb(0.36, 0.41, 0.38),
+        TerrainKind::PaddyBund => Color::srgb(0.38, 0.30, 0.13),
+        TerrainKind::FarmPath => Color::srgb(0.46, 0.40, 0.28),
+        TerrainKind::IrrigationChannel => Color::srgb(0.08, 0.40, 0.50),
+        TerrainKind::Culvert => Color::srgb(0.44, 0.44, 0.39),
+        TerrainKind::GarageApron => Color::srgb(0.34, 0.36, 0.34),
     }
 }
 

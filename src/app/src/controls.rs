@@ -191,11 +191,11 @@ fn buy_robot(session: &mut GameSession) {
 
 fn build_facility(session: &mut GameSession) {
     let candidates = [
-        (FacilityKind::SeedStorage, TilePos::new(25, 20)),
-        (FacilityKind::IrrigationNode, TilePos::new(23, 20)),
-        (FacilityKind::SolarGenerator, TilePos::new(27, 20)),
-        (FacilityKind::Battery, TilePos::new(29, 20)),
-        (FacilityKind::Packer, TilePos::new(25, 22)),
+        (FacilityKind::SeedStorage, TilePos::new(45, 23)),
+        (FacilityKind::IrrigationNode, TilePos::new(42, 23)),
+        (FacilityKind::SolarGenerator, TilePos::new(42, 20)),
+        (FacilityKind::Battery, TilePos::new(45, 20)),
+        (FacilityKind::Packer, TilePos::new(39, 20)),
     ];
     let missing: Vec<_> = candidates
         .into_iter()

@@ -47,6 +47,11 @@ pub enum TerrainKind {
     Water,
     Rock,
     Concrete,
+    PaddyBund,
+    FarmPath,
+    IrrigationChannel,
+    Culvert,
+    GarageApron,
 }
 
 impl TerrainKind {
@@ -112,6 +117,7 @@ pub struct Tile {
     pub crop: Option<CropInstance>,
     pub building: Option<EntityId>,
     pub occupied: bool,
+    pub plowed: bool,
     pub tilled: bool,
     pub water_level: u8,
 }
@@ -126,6 +132,7 @@ impl Tile {
             crop: None,
             building: None,
             occupied: false,
+            plowed: false,
             tilled: false,
             water_level: 0,
         }
@@ -147,10 +154,37 @@ impl FarmGrid {
             for x in 0..width {
                 let terrain_noise =
                     x.wrapping_mul(73_856_093) ^ y.wrapping_mul(19_349_663) ^ seed as u32;
+                let on_paddy_bund = ((x == 9 || x == 21) && (15..=26).contains(&y)
+                    || (y == 15 || y == 26) && (9..=21).contains(&x)
+                    || (x == 22 || x == 34) && (15..=26).contains(&y)
+                    || (y == 15 || y == 26) && (22..=34).contains(&x))
+                    && !matches!((x, y), (15, 15) | (28, 15));
+                let in_paddy =
+                    ((10..=20).contains(&x) || (23..=33).contains(&x)) && (16..=25).contains(&y);
                 let terrain = if x == 0 || y == 0 || x + 1 == width || y + 1 == height {
                     TerrainKind::Rock
-                } else if x > 54 && (8..56).contains(&y) {
+                } else if x >= 58 && (7..=56).contains(&y) {
                     TerrainKind::Water
+                } else if matches!((x, y), (7, 13) | (35, 13)) {
+                    TerrainKind::Culvert
+                } else if (39..=46).contains(&x) && (7..=12).contains(&y) {
+                    TerrainKind::GarageApron
+                } else if y == 13 && (6..=49).contains(&x)
+                    || (x == 15 || x == 28) && (13..=15).contains(&y)
+                    || (x == 36 || x == 37) && (13..=34).contains(&y)
+                {
+                    TerrainKind::FarmPath
+                } else if (x == 7 && (7..=35).contains(&y))
+                    || (y == 11 && (7..=35).contains(&x))
+                    || (x == 35 && (11..=29).contains(&y))
+                {
+                    TerrainKind::IrrigationChannel
+                } else if on_paddy_bund {
+                    TerrainKind::PaddyBund
+                } else if in_paddy {
+                    TerrainKind::Soil
+                } else if (38..=49).contains(&x) && (15..=25).contains(&y) {
+                    TerrainKind::Concrete
                 } else if terrain_noise.is_multiple_of(31) {
                     TerrainKind::RoughSoil
                 } else if x < 5 || y < 5 {
@@ -203,6 +237,7 @@ impl FarmGrid {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Capability {
+    Plow,
     Till,
     FloodPaddy,
     Seed,
@@ -248,12 +283,17 @@ pub struct RobotDef {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RobotState {
+    Parked,
     Idle,
+    Departing(JobId),
     MovingToJob(JobId),
+    Preparing(JobId),
     Working(JobId),
+    Finishing(JobId),
     MovingToCharge,
     Charging,
     MovingToStorage,
+    ReturningToGarage,
     Broken,
 }
 
@@ -319,11 +359,13 @@ pub struct Robot {
     pub inventory: Inventory,
     pub condition: f32,
     pub position: TilePos,
+    pub home_position: TilePos,
     pub work_progress: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum JobKind {
+    Plow,
     Till,
     FloodPaddy,
     Seed,
@@ -350,6 +392,7 @@ impl JobKind {
     #[must_use]
     pub const fn required_capability(self) -> Capability {
         match self {
+            Self::Plow => Capability::Plow,
             Self::Till => Capability::Till,
             Self::FloodPaddy => Capability::FloodPaddy,
             Self::Seed => Capability::Seed,
@@ -376,6 +419,7 @@ impl JobKind {
     #[must_use]
     pub const fn effort(self) -> f32 {
         match self {
+            Self::Plow => 24.0,
             Self::Harvest | Self::PrecisionHarvest => 18.0,
             Self::Till | Self::Dig | Self::Repair => 14.0,
             Self::FloodPaddy | Self::LoosenSoil => 12.0,
@@ -383,6 +427,25 @@ impl JobKind {
             Self::Seed | Self::Plant | Self::Water | Self::Pollinate | Self::Inspect => 8.0,
             Self::PestControl | Self::SprayPests | Self::LaserPests => 6.0,
             Self::Haul | Self::Recharge | Self::Pack => 4.0,
+        }
+    }
+
+    #[must_use]
+    pub const fn preparation_minutes(self) -> u16 {
+        match self {
+            Self::Plow | Self::Transplant | Self::Harvest | Self::PrecisionHarvest => 4,
+            Self::Till | Self::FloodPaddy | Self::Seed | Self::Plant | Self::Dig => 3,
+            Self::Weed | Self::LoosenSoil | Self::SprayPests | Self::LaserPests => 2,
+            _ => 1,
+        }
+    }
+
+    #[must_use]
+    pub const fn finishing_minutes(self) -> u16 {
+        match self {
+            Self::Plow | Self::Till | Self::Harvest | Self::PrecisionHarvest => 3,
+            Self::FloodPaddy | Self::Transplant | Self::Seed | Self::Plant | Self::Dig => 2,
+            _ => 1,
         }
     }
 }
@@ -422,6 +485,7 @@ pub struct FieldZone {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum FacilityKind {
+    RobotGarage,
     Warehouse,
     SeedStorage,
     ChargingStation,
@@ -437,6 +501,7 @@ impl FacilityKind {
     #[must_use]
     pub const fn price(self) -> i32 {
         match self {
+            Self::RobotGarage => 1_600,
             Self::Warehouse => 800,
             Self::SeedStorage => 300,
             Self::ChargingStation => 650,
