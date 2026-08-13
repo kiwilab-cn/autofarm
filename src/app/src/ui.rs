@@ -150,9 +150,14 @@ fn spawn_hud(mut commands: Commands) {
             .with_children(|panel| {
                 panel.spawn(label("RICE OPERATIONS", 17.0, theme::ACCENT));
                 panel.spawn(label(
-                    "01 PADDY ROVER  — PREP + FLOOD\n02 SIX-LEGGER   — TRANSPLANT\n03 QUADCOPTER   — PEST CONTROL\n04 HARVESTER    — COLLECT",
+                    "01 PADDY ROVER  — EMPTY-FIELD PREP\n02 SIX-LEGGER   — PLANT + FIELD CARE\n03 QUADCOPTER   — SPRAY + LASER\n04 HARVESTER    — RIPE CROP ONLY",
                     12.0,
                     theme::GOLD,
+                ));
+                panel.spawn(label(
+                    "TIME  [1] 1x  [2] 8x  [3] 64x  [4] PAUSE",
+                    11.0,
+                    theme::MUTED,
                 ));
                 for (text, action) in [
                     ("F  CYCLE CROP", UiAction::CycleCrop),
@@ -394,9 +399,12 @@ fn update_hud_text(
     let snapshot = session.simulation.snapshot();
     for mut text in &mut text_queries.p0() {
         **text = format!(
-            "◈ ${:>6}    DAY {}  {:02}:{:02}    {:?}    POWER {:.0}/{:.0} +{:.0}    WATER {:.0}    AUTONOMY {}    SPEED {}x",
+            "◈ ${:>6}   Y{} {:?} {:02}/{:02}   {:02}:{:02}   {:?}   POWER {:.0}/{:.0} +{:.0}   WATER {:.0}   AUTO {}   {}x",
             snapshot.credits,
-            snapshot.time.day(),
+            snapshot.time.year(),
+            snapshot.time.season(),
+            snapshot.time.day_of_season(),
+            autofarm_sim::SimClock::DAYS_PER_SEASON,
             snapshot.time.hour(),
             snapshot.time.minute_of_hour(),
             snapshot.weather,
@@ -518,14 +526,32 @@ fn inspector_text(session: &GameSession) -> String {
                     .catalog
                     .crops
                     .get(&crop.crop_id)
-                    .and_then(|definition| definition.stages.get(crop.stage_index))
-                    .map_or("Unknown", |stage| stage.name.as_str());
+                    .and_then(|definition| definition.stages.get(crop.stage_index));
+                let stage_name = stage.map_or("Unknown", |stage| stage.name.as_str());
+                let stage_days = stage.map_or(0, |stage| {
+                    u64::from(stage.duration_minutes).div_ceil(autofarm_sim::SimClock::MINUTES_PER_DAY)
+                });
+                let stage_day = (u64::from(crop.stage_progress)
+                    / autofarm_sim::SimClock::MINUTES_PER_DAY
+                    + 1)
+                    .min(stage_days.max(1));
+                let age_days = session
+                    .simulation
+                    .clock
+                    .minute
+                    .saturating_sub(crop.planted_at)
+                    / autofarm_sim::SimClock::MINUTES_PER_DAY;
                 format!(
-                    "{} / {}\nMoisture {}%  Health {}%\nPests {}%  Protection {}\nPollinated {}  Inspection {}",
+                    "{} / {}\nAge {}d  Stage day {}/{}\nMoisture {}%  Health {}%\nWeeds {}%  Soil compact {}%\nPests {}%  Protection {}\nPollinated {}  Inspection {}",
                     crop.crop_id,
-                    stage,
+                    stage_name,
+                    age_days,
+                    stage_day,
+                    stage_days,
                     crop.moisture,
                     crop.health,
+                    crop.weed_pressure,
+                    crop.soil_compaction,
                     crop.pest_pressure,
                     if crop.pest_controlled { "DONE" } else { "DUE" },
                     yes_no(crop.pollinated),
