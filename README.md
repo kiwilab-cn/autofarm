@@ -34,18 +34,18 @@ The default `MockLlmProvider` needs no API key. Remote-provider settings are rea
 | `S` / `L` | Save / load `autofarm-save.ron` |
 | `Esc` | Close overlays or quit |
 
-The left build panel and bottom hint bar mirror these controls. The camera opens on two 11×10 paddies with large 32-pixel tiles, raised bunds, farm paths, irrigation channels, culvert crossings, a robot garage, six visible rice growth stages, and a role-specific fleet:
+The left build panel and bottom hint bar mirror these controls. The camera opens on a production-authored 64×64 Tiled map with strict 32-pixel cells, two large 11×28 and 13×28 paddies, raised auto-oriented bunds, field entrances, stone service roads, feeder and drainage channels, culvert crossings, a four-bay robot garage, a utility yard, six visible rice growth stages, and a role-specific fleet:
 
 - the wheeled paddy rover leaves its garage to deep-plough with a moldboard, changes to a rotary tiller and leveling board, then floods empty paddies before planting;
 - the six-legged spider transplanter places seedlings, irrigates planted rows, removes weeds, and loosens compacted mud;
 - the quadcopter alternates targeted spray and laser pest control;
 - the tracked harvester collects mature golden rice.
 
-Wheeled preparation equipment cannot cross irrigation channels, drive over paddy bunds, or path through planted tiles. Ground robots reserve occupied tiles and queue at the garage exit instead of overlapping. Work follows whole-field `Plow → Till → Flood → Transplant` gates; each job stops for tool deployment, performs its work cycle, pauses to stow equipment, and only returns to its assigned garage bay after nearby work runs out. Once seedlings are present, only legged machines enter until a mature crop creates a harvester job.
+Wheeled preparation equipment cannot cross irrigation channels, drive over paddy bunds, or path through planted tiles. Robot movement uses continuous sub-tile progress; ground and air fleets reserve both occupied and incoming tiles so they queue at the garage exit and culverts instead of overlapping. Work follows whole-field `Plow → Till → Flood → Transplant` gates in 3×3 operating patches; each job stops for tool deployment, performs its work cycle, pauses to stow equipment, and only returns to its assigned garage bay after nearby work runs out. Once seedlings are present, only legged machines enter until a mature crop creates a harvester job.
 
 The calendar uses four 28-day seasons. Rice takes roughly 18 in-game days to move from transplanting to a harvest-ready golden stage and stops growing in winter. Select a tile to inspect crop age, stage days, paddy water, weeds, soil compaction, pest pressure, and queued work.
 
-Runtime art follows the conventions in `assets/art/README.md`; the RON manifest records every pixel asset's path, dimensions, frame layout, purpose, and provenance.
+Runtime art follows the conventions in `assets/art/README.md`; the RON manifest records every pixel asset's path, dimensions, frame layout, purpose, and provenance. The editable map package uses Tiled `.tmj`/`.tsj` assets, while `source-assets/` keeps concepts and generated atlas sources out of the runtime bundle.
 
 ## Architecture
 
@@ -60,7 +60,10 @@ autofarm-sim <- autofarm-ai <- autofarm-editor <- autofarm-app
 - `src/editor`: natural-language demo intents, permission-aware preview/apply, world-revision checks, and undo.
 - `src/app`: Bevy plugins, 2D rendering, UI, camera/input, and visual feedback.
 - `assets/data`: RON content definitions for crops, robots, and contracts.
+- `assets/maps`: Tiled map projects, external tilesets, collision/navigation annotations, facilities, spawn points, and starter zones.
 - `assets/art`: generated project artwork for the title screen, rice stages, paddy water, and the specialist robot fleet.
+- `source-assets`: editable concepts and atlas sources; never loaded by the game.
+- `tools`: deterministic map/atlas build pipeline.
 
 The LLM boundary never receives raw ECS state and never mutates the world. AI output becomes a typed `GameCommand`, passes permission and world-revision validation, and only then enters the simulation.
 

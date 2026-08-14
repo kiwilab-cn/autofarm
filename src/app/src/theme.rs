@@ -1,4 +1,4 @@
-use autofarm_sim::{CropInstance, TerrainKind};
+use autofarm_sim::CropInstance;
 use bevy::prelude::*;
 
 pub const BACKGROUND: Color = Color::srgb(0.035, 0.055, 0.055);
@@ -13,23 +13,6 @@ pub const DANGER: Color = Color::srgb(0.92, 0.30, 0.26);
 pub const BUTTON: Color = Color::srgb(0.10, 0.24, 0.19);
 pub const BUTTON_HOVER: Color = Color::srgb(0.15, 0.36, 0.27);
 pub const BUTTON_PRESS: Color = Color::srgb(0.30, 0.64, 0.40);
-
-#[must_use]
-pub fn terrain_color(terrain: TerrainKind) -> Color {
-    match terrain {
-        TerrainKind::Soil => Color::srgb(0.28, 0.16, 0.09),
-        TerrainKind::RoughSoil => Color::srgb(0.36, 0.27, 0.16),
-        TerrainKind::Grass => Color::srgb(0.18, 0.39, 0.20),
-        TerrainKind::Water => Color::srgb(0.08, 0.34, 0.43),
-        TerrainKind::Rock => Color::srgb(0.25, 0.29, 0.28),
-        TerrainKind::Concrete => Color::srgb(0.36, 0.41, 0.38),
-        TerrainKind::PaddyBund => Color::srgb(0.38, 0.30, 0.13),
-        TerrainKind::FarmPath => Color::srgb(0.46, 0.40, 0.28),
-        TerrainKind::IrrigationChannel => Color::srgb(0.08, 0.40, 0.50),
-        TerrainKind::Culvert => Color::srgb(0.44, 0.44, 0.39),
-        TerrainKind::GarageApron => Color::srgb(0.34, 0.36, 0.34),
-    }
-}
 
 #[must_use]
 pub fn crop_color(crop: &CropInstance) -> Color {

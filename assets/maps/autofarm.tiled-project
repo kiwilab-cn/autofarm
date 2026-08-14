@@ -1,0 +1,145 @@
+{
+  "folders": [
+    "."
+  ],
+  "propertyTypes": [
+    {
+      "name": "TerrainTile",
+      "type": "class",
+      "members": [
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "Grass"
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "value": "base"
+        }
+      ]
+    },
+    {
+      "name": "Facility",
+      "type": "class",
+      "members": [
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "Warehouse"
+        },
+        {
+          "name": "anchor_x",
+          "type": "int",
+          "value": 0
+        },
+        {
+          "name": "anchor_y",
+          "type": "int",
+          "value": 0
+        },
+        {
+          "name": "atlas_index",
+          "type": "int",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "name": "FacilityTile",
+      "type": "class",
+      "members": [
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "Warehouse"
+        }
+      ]
+    },
+    {
+      "name": "FieldZone",
+      "type": "class",
+      "members": [
+        {
+          "name": "crop_id",
+          "type": "string",
+          "value": "rice"
+        },
+        {
+          "name": "priority",
+          "type": "int",
+          "value": 60
+        }
+      ]
+    },
+    {
+      "name": "GarageExit",
+      "type": "class",
+      "members": []
+    },
+    {
+      "name": "GarageBay",
+      "type": "class",
+      "members": [
+        {
+          "name": "order",
+          "type": "int",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "name": "RobotSpawn",
+      "type": "class",
+      "members": [
+        {
+          "name": "robot_id",
+          "type": "string",
+          "value": "paddy_rover"
+        },
+        {
+          "name": "order",
+          "type": "int",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "name": "NavigationArea",
+      "type": "class",
+      "members": [
+        {
+          "name": "ground_cost",
+          "type": "int",
+          "value": 1
+        },
+        {
+          "name": "legged_cost",
+          "type": "int",
+          "value": 1
+        },
+        {
+          "name": "wheeled_empty_only",
+          "type": "bool",
+          "value": false
+        }
+      ]
+    },
+    {
+      "name": "CollisionArea",
+      "type": "class",
+      "members": [
+        {
+          "name": "blocks",
+          "type": "string",
+          "value": "ground"
+        },
+        {
+          "name": "owner",
+          "type": "string",
+          "value": ""
+        }
+      ]
+    }
+  ]
+}

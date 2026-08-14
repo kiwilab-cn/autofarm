@@ -9,31 +9,21 @@ use crate::{
     ActiveContract, AutonomyReport, AutonomyTrial, Capability, CommandActor, CommandEnvelope,
     CommandError, CommandPermissions, ContentCatalog, ContentError, ContractStatus, CropInstance,
     EditorCommand, Facility, FacilityKind, FarmCommand, FarmEvent, FarmGrid, FarmSnapshot,
-    FieldZone, GameCommand, GameMetrics, Inventory, Job, JobKind, JobStatus, NpcAssignment,
-    PowerGrid, Robot, RobotBody, RobotState, SimClock, TerrainKind, TilePos, WaterNetwork, Weather,
-    calculate_autonomy_report,
+    FieldZone, GameCommand, GameMetrics, Inventory, Job, JobKind, JobStatus, MapDefinition,
+    NpcAssignment, PowerGrid, Robot, RobotBody, RobotState, SimClock, TerrainKind, TilePos,
+    WaterNetwork, Weather, calculate_autonomy_report,
 };
 
-pub const SAVE_VERSION: u32 = 4;
-const MAP_SIZE: u32 = 64;
+pub const SAVE_VERSION: u32 = 6;
 const MAX_EVENTS: usize = 80;
 const IDLE_RETURN_DELAY_MINUTES: f32 = 12.0;
-const GARAGE_EXIT: TilePos = TilePos::new(42, 13);
-const GARAGE_BAYS: [TilePos; 8] = [
-    TilePos::new(40, 11),
-    TilePos::new(42, 11),
-    TilePos::new(44, 11),
-    TilePos::new(46, 11),
-    TilePos::new(40, 12),
-    TilePos::new(42, 12),
-    TilePos::new(44, 12),
-    TilePos::new(46, 12),
-];
 
 #[derive(Debug, Error)]
 pub enum SimulationError {
     #[error(transparent)]
     Content(#[from] ContentError),
+    #[error("map definition failed: {0}")]
+    Map(String),
     #[error("save serialization failed: {0}")]
     Serialization(String),
     #[error("unsupported save version {found}; expected {expected}")]
@@ -45,6 +35,9 @@ pub struct GameSimulation {
     pub version: u32,
     pub seed: u64,
     pub catalog: ContentCatalog,
+    pub map_id: String,
+    #[serde(skip, default)]
+    pub map: MapDefinition,
     pub grid: FarmGrid,
     pub clock: SimClock,
     pub weather: Weather,
@@ -74,11 +67,16 @@ pub struct GameSimulation {
 impl GameSimulation {
     pub fn new(seed: u64) -> Result<Self, SimulationError> {
         let catalog = ContentCatalog::load_embedded()?;
+        let map = MapDefinition::load_embedded()
+            .map_err(|error| SimulationError::Map(error.to_string()))?;
+        let map_id = map.id.clone();
         let mut simulation = Self {
             version: SAVE_VERSION,
             seed,
             catalog: catalog.clone(),
-            grid: FarmGrid::fixed_map(MAP_SIZE, MAP_SIZE, seed),
+            map_id,
+            grid: FarmGrid::from_definition(&map),
+            map,
             clock: SimClock::default(),
             weather: Weather::Clear,
             credits: 5_000,
@@ -135,32 +133,29 @@ impl GameSimulation {
         };
 
         simulation.activate_contract(0);
-        for (kind, position) in [
-            (FacilityKind::RobotGarage, TilePos::new(42, 9)),
-            (FacilityKind::Warehouse, TilePos::new(39, 17)),
-            (FacilityKind::ChargingStation, TilePos::new(42, 17)),
-            (FacilityKind::ShippingDock, TilePos::new(45, 17)),
-            (FacilityKind::Packer, TilePos::new(39, 20)),
-            (FacilityKind::SolarGenerator, TilePos::new(42, 20)),
-            (FacilityKind::Battery, TilePos::new(45, 20)),
-            (FacilityKind::WaterPump, TilePos::new(39, 23)),
-            (FacilityKind::IrrigationNode, TilePos::new(42, 23)),
-        ] {
-            simulation.spawn_facility_unchecked(kind, position);
+        for facility in simulation.map.starter_facilities.clone() {
+            simulation.spawn_map_facility_unchecked(&facility);
         }
-        for (robot_id, bay) in [
-            "paddy_rover",
-            "rice_transplanter",
-            "pest_control_drone",
-            "rice_harvester",
-        ]
-        .into_iter()
-        .zip(GARAGE_BAYS.iter().copied())
+        for (robot_id, bay) in simulation
+            .map
+            .starter_robots
+            .clone()
+            .into_iter()
+            .zip(simulation.map.garage_bays.clone())
         {
-            simulation.spawn_robot_unchecked(robot_id, bay);
+            simulation.spawn_robot_unchecked(&robot_id, bay);
         }
-        simulation.create_zone_unchecked(TilePos::new(10, 16), (11, 10), "rice", 85);
-        simulation.create_zone_unchecked(TilePos::new(23, 16), (11, 10), "rice", 82);
+        for zone in simulation.map.starter_zones.clone() {
+            let id = simulation.create_zone_unchecked(
+                zone.origin,
+                zone.size,
+                &zone.crop_id,
+                zone.priority,
+            );
+            if let Some(created) = simulation.zones.iter_mut().find(|created| created.id == id) {
+                created.name = zone.name;
+            }
+        }
         simulation.push_event(FarmEvent::Info(
             "Rice cells online: garage departure, plough, rotary till, flood, transplant, protect, harvest.".to_owned(),
         ));
@@ -470,7 +465,13 @@ impl GameSimulation {
                 position,
             } => {
                 for _ in 0..count {
-                    self.spawn_robot_unchecked(&robot_def_id, position);
+                    self.spawn_robot_unchecked(&robot_def_id, position)
+                        .ok_or_else(|| {
+                            CommandError::Invalid(format!(
+                                "there is no collision-free spawn near ({}, {})",
+                                position.x, position.y
+                            ))
+                        })?;
                 }
             }
             EditorCommand::PatchCropDefinition { definition } => {
@@ -885,8 +886,9 @@ impl GameSimulation {
                         self.reset_robot(index);
                         continue;
                     }
-                    self.move_robot(index, GARAGE_EXIT);
-                    if self.robots[index].position == GARAGE_EXIT {
+                    let garage_exit = self.map.garage_exit;
+                    self.move_robot(index, garage_exit);
+                    if self.robot_arrived(index, garage_exit) {
                         self.robots[index].state = RobotState::MovingToJob(job_id);
                     }
                 }
@@ -898,7 +900,7 @@ impl GameSimulation {
                         .map(|job| job.location);
                     if let Some(target) = target {
                         self.move_robot(index, target);
-                        if self.robots[index].position == target {
+                        if self.robot_arrived(index, target) {
                             self.robots[index].state = RobotState::Preparing(job_id);
                             self.robots[index].work_progress = 0.0;
                         }
@@ -956,7 +958,7 @@ impl GameSimulation {
                 }
                 RobotState::MovingToCharge => {
                     self.move_robot(index, charger);
-                    if self.robots[index].position == charger {
+                    if self.robot_arrived(index, charger) {
                         self.robots[index].state = RobotState::Charging;
                     }
                 }
@@ -972,7 +974,7 @@ impl GameSimulation {
                 }
                 RobotState::MovingToStorage => {
                     self.move_robot(index, warehouse);
-                    if self.robots[index].position == warehouse {
+                    if self.robot_arrived(index, warehouse) {
                         self.robots[index].inventory.drain_into(&mut self.inventory);
                         self.robots[index].state = if self.robots[index].battery <= 20.0 {
                             RobotState::MovingToCharge
@@ -984,7 +986,7 @@ impl GameSimulation {
                 RobotState::ReturningToGarage => {
                     let home = self.robots[index].home_position;
                     self.move_robot(index, home);
-                    if self.robots[index].position == home {
+                    if self.robot_arrived(index, home) {
                         self.robots[index].state = RobotState::Parked;
                         self.robots[index].work_progress = 0.0;
                     }
@@ -1000,13 +1002,16 @@ impl GameSimulation {
     }
 
     fn move_robot(&mut self, index: usize, target: TilePos) {
-        let stride_minutes = match self.robots[index].body {
-            RobotBody::Flying => 2,
-            RobotBody::Quadruped | RobotBody::Hexapod => 3,
-            RobotBody::Biped => 4,
-            RobotBody::Wheeled => 4,
-        };
-        if !(self.clock.minute + self.robots[index].id).is_multiple_of(stride_minutes) {
+        if let Some(next) = self.robots[index].movement_target {
+            self.robots[index].movement_progress += movement_rate(self.robots[index].body);
+            if self.robots[index].movement_progress >= 1.0 {
+                self.robots[index].position = next;
+                self.robots[index].movement_target = None;
+                self.robots[index].movement_progress = 0.0;
+                let energy = self.robots[index].energy_per_tile;
+                self.robots[index].battery = (self.robots[index].battery - energy).max(0.0);
+                self.metrics.energy_consumed += energy.ceil() as u64;
+            }
             return;
         }
         if self.robots[index].position == target {
@@ -1030,16 +1035,20 @@ impl GameSimulation {
         let Some(next) = next else {
             return;
         };
-        self.robots[index].position = next;
-        let energy = self.robots[index].energy_per_tile;
-        self.robots[index].battery = (self.robots[index].battery - energy).max(0.0);
-        self.metrics.energy_consumed += energy.ceil() as u64;
+        self.robots[index].movement_target = Some(next);
+        self.robots[index].movement_progress = movement_rate(self.robots[index].body);
     }
 
     fn reset_robot(&mut self, index: usize) {
         self.robots[index].state = RobotState::Idle;
         self.robots[index].current_job = None;
         self.robots[index].work_progress = 0.0;
+        self.robots[index].movement_target = None;
+        self.robots[index].movement_progress = 0.0;
+    }
+
+    fn robot_arrived(&self, index: usize, target: TilePos) -> bool {
+        self.robots[index].position == target && self.robots[index].movement_target.is_none()
     }
 
     fn robot_occupied_tiles(&self, robot_id: u64, body: RobotBody) -> BTreeSet<TilePos> {
@@ -1053,7 +1062,8 @@ impl GameSimulation {
                     robot.body != RobotBody::Flying
                 }
             })
-            .map(|robot| robot.position)
+            .flat_map(|robot| [Some(robot.position), robot.movement_target])
+            .flatten()
             .collect()
     }
 
@@ -1070,9 +1080,19 @@ impl GameSimulation {
             .map(|zone| zone.crop_id.clone())
             .unwrap_or_else(|| "rice".to_owned());
         let crop_definition = self.catalog.crops.get(&zone_crop).cloned();
-        let mut harvested: Option<(String, u32)> = None;
+        let patch_positions = self.job_patch_positions(&job);
+        let mut harvested = BTreeMap::<String, u32>::new();
         let mut tending_job = None;
-        if let Some(tile) = self.grid.tile_mut(job.location) {
+        for position in patch_positions {
+            let harvest_definition = self
+                .grid
+                .tile(position)
+                .and_then(|tile| tile.crop.as_ref())
+                .and_then(|crop| self.catalog.crops.get(&crop.crop_id))
+                .cloned();
+            let Some(tile) = self.grid.tile_mut(position) else {
+                continue;
+            };
             match job.kind {
                 JobKind::Plow => {
                     tile.plowed = true;
@@ -1092,9 +1112,11 @@ impl GameSimulation {
                     self.metrics.water_consumed += 5;
                 }
                 JobKind::Seed | JobKind::Plant | JobKind::Transplant => {
-                    if let Some(definition) = crop_definition {
+                    if tile.crop.is_none()
+                        && let Some(definition) = crop_definition.as_ref()
+                    {
                         tile.crop = Some(CropInstance {
-                            crop_id: definition.id,
+                            crop_id: definition.id.clone(),
                             planted_at: self.clock.minute,
                             stage_index: 0,
                             stage_progress: 0,
@@ -1150,9 +1172,10 @@ impl GameSimulation {
                 }
                 JobKind::Harvest | JobKind::PrecisionHarvest | JobKind::Dig => {
                     if let Some(crop) = tile.crop.as_mut()
-                        && let Some(definition) = self.catalog.crops.get(&crop.crop_id)
+                        && let Some(definition) = harvest_definition.as_ref()
                     {
-                        harvested = Some((definition.id.clone(), definition.harvest_yield));
+                        *harvested.entry(definition.id.clone()).or_default() +=
+                            definition.harvest_yield;
                         if crop.remaining_harvests > 1 {
                             crop.remaining_harvests -= 1;
                             crop.stage_index = definition.stages.len().saturating_sub(2);
@@ -1175,12 +1198,13 @@ impl GameSimulation {
             }
         }
         if let Some(kind) = tending_job {
-            self.complete_tending_patch(job.location, kind, job.id);
+            self.complete_tending_patch(job.location, kind);
         }
-        if let Some((item, amount)) = harvested {
-            self.robots[robot_index].inventory.add(item, amount);
-            self.metrics.crops_produced += u64::from(amount);
+        for (item, amount) in harvested {
+            let accepted = self.robots[robot_index].inventory.add(item, amount);
+            self.metrics.crops_produced += u64::from(accepted);
         }
+        self.cancel_patch_jobs(&job);
         self.jobs[job_index].status = JobStatus::Completed;
         self.metrics.jobs_completed += 1;
         self.robots[robot_index].current_job = None;
@@ -1194,7 +1218,43 @@ impl GameSimulation {
         };
     }
 
-    fn complete_tending_patch(&mut self, center: TilePos, kind: JobKind, completed_job_id: u64) {
+    fn job_patch_positions(&self, job: &Job) -> Vec<TilePos> {
+        if work_group(job.kind) == 0 {
+            return vec![job.location];
+        }
+        let Some(zone) = self.zones.iter().find(|zone| zone.id == job.zone_id) else {
+            return vec![job.location];
+        };
+        let zone_end_x = zone.origin.x.saturating_add(zone.size.0);
+        let zone_end_y = zone.origin.y.saturating_add(zone.size.1);
+        let start_x = job.location.x.saturating_sub(1).max(zone.origin.x);
+        let start_y = job.location.y.saturating_sub(1).max(zone.origin.y);
+        let end_x = (job.location.x + 1).min(zone_end_x.saturating_sub(1));
+        let end_y = (job.location.y + 1).min(zone_end_y.saturating_sub(1));
+        self.grid.positions_in_rect(
+            TilePos::new(start_x, start_y),
+            (end_x - start_x + 1, end_y - start_y + 1),
+        )
+    }
+
+    fn cancel_patch_jobs(&mut self, completed: &Job) {
+        for queued in &mut self.jobs {
+            if queued.id != completed.id
+                && queued.zone_id == completed.zone_id
+                && jobs_share_work_patch(
+                    queued.kind,
+                    queued.location,
+                    completed.kind,
+                    completed.location,
+                )
+                && matches!(queued.status, JobStatus::Pending | JobStatus::Assigned)
+            {
+                queued.status = JobStatus::Cancelled;
+            }
+        }
+    }
+
+    fn complete_tending_patch(&mut self, center: TilePos, kind: JobKind) {
         let start_x = center.x.saturating_sub(1);
         let start_y = center.y.saturating_sub(1);
         let end_x = (center.x + 1).min(self.grid.width.saturating_sub(1));
@@ -1224,14 +1284,6 @@ impl GameSimulation {
                     }
                     _ => {}
                 }
-            }
-        }
-        for queued in &mut self.jobs {
-            if queued.id != completed_job_id
-                && jobs_share_work_patch(queued.kind, queued.location, kind, center)
-                && matches!(queued.status, JobStatus::Pending | JobStatus::Assigned)
-            {
-                queued.status = JobStatus::Cancelled;
             }
         }
     }
@@ -1436,7 +1488,7 @@ impl GameSimulation {
     }
 
     pub fn from_ron(input: &str) -> Result<Self, SimulationError> {
-        let simulation: Self = ron::from_str(input)
+        let mut simulation: Self = ron::from_str(input)
             .map_err(|error| SimulationError::Serialization(error.to_string()))?;
         if simulation.version != SAVE_VERSION {
             return Err(SimulationError::UnsupportedSaveVersion {
@@ -1444,6 +1496,15 @@ impl GameSimulation {
                 expected: SAVE_VERSION,
             });
         }
+        let map = MapDefinition::load_embedded()
+            .map_err(|error| SimulationError::Map(error.to_string()))?;
+        if simulation.map_id != map.id {
+            return Err(SimulationError::Map(format!(
+                "save references map {}; runtime provides {}",
+                simulation.map_id, map.id
+            )));
+        }
+        simulation.map = map;
         Ok(simulation)
     }
 
@@ -1572,11 +1633,7 @@ impl GameSimulation {
 
     fn spawn_robot_unchecked(&mut self, robot_def_id: &str, position: TilePos) -> Option<u64> {
         let definition = self.catalog.robots.get(robot_def_id)?.clone();
-        let position = if self.robots.iter().any(|robot| robot.position == position) {
-            self.available_garage_bay()?
-        } else {
-            position
-        };
+        let position = self.available_robot_spawn(position, definition.body, &definition.id)?;
         let id = self.next_entity_id;
         self.next_entity_id += 1;
         self.robots.push(Robot {
@@ -1596,6 +1653,8 @@ impl GameSimulation {
             },
             condition: 100.0,
             position,
+            movement_target: None,
+            movement_progress: 0.0,
             home_position: position,
             work_progress: 0.0,
         });
@@ -1604,6 +1663,45 @@ impl GameSimulation {
             definition.display_name
         )));
         Some(id)
+    }
+
+    fn available_robot_spawn(
+        &self,
+        preferred: TilePos,
+        body: RobotBody,
+        robot_def_id: &str,
+    ) -> Option<TilePos> {
+        (0..self.grid.height)
+            .flat_map(|y| (0..self.grid.width).map(move |x| TilePos::new(x, y)))
+            .filter(|position| {
+                let Some(tile) = self.grid.tile(*position) else {
+                    return false;
+                };
+                if tile.building.is_some()
+                    || self.robots.iter().any(|robot| robot.position == *position)
+                {
+                    return false;
+                }
+                if body == RobotBody::Flying {
+                    return true;
+                }
+                !matches!(
+                    tile.terrain,
+                    TerrainKind::Water | TerrainKind::Rock | TerrainKind::IrrigationChannel
+                ) && !(body == RobotBody::Wheeled && tile.terrain == TerrainKind::PaddyBund)
+                    && (body != RobotBody::Wheeled
+                        || tile.crop.is_none()
+                        || robot_def_id == "rice_harvester")
+            })
+            .min_by_key(|position| {
+                (
+                    position.manhattan(preferred),
+                    position.y.abs_diff(preferred.y),
+                    position.x.abs_diff(preferred.x),
+                    position.y,
+                    position.x,
+                )
+            })
     }
 
     fn spawn_facility_unchecked(&mut self, kind: FacilityKind, position: TilePos) -> u64 {
@@ -1623,6 +1721,26 @@ impl GameSimulation {
         id
     }
 
+    fn spawn_map_facility_unchecked(&mut self, definition: &crate::MapFacilityDef) -> u64 {
+        let id = self.spawn_facility_unchecked(definition.kind, definition.position);
+        let collision_areas: Vec<_> = self
+            .map
+            .collision_areas
+            .iter()
+            .filter(|area| area.owner == Some(definition.kind))
+            .map(|area| (area.origin, area.size))
+            .collect();
+        for (origin, size) in collision_areas {
+            for position in self.grid.positions_in_rect(origin, size) {
+                if let Some(tile) = self.grid.tile_mut(position) {
+                    tile.building = Some(id);
+                    tile.occupied = true;
+                }
+            }
+        }
+        id
+    }
+
     fn delete_entity(&mut self, entity_id: u64) {
         if let Some(index) = self
             .facilities
@@ -1630,10 +1748,11 @@ impl GameSimulation {
             .position(|facility| facility.id == entity_id)
         {
             let facility = self.facilities.remove(index);
-            if let Some(tile) = self.grid.tile_mut(facility.position) {
-                tile.building = None;
-                tile.occupied = false;
-                tile.terrain = TerrainKind::Soil;
+            for tile in &mut self.grid.tiles {
+                if tile.building == Some(facility.id) {
+                    tile.building = None;
+                    tile.occupied = false;
+                }
             }
             return;
         }
@@ -1656,7 +1775,8 @@ impl GameSimulation {
     }
 
     fn available_garage_bay(&self) -> Option<TilePos> {
-        GARAGE_BAYS
+        self.map
+            .garage_bays
             .iter()
             .copied()
             .find(|bay| self.robots.iter().all(|robot| robot.home_position != *bay))
@@ -1737,6 +1857,15 @@ fn robot_allows_planted_fields(robot: &Robot) -> bool {
     robot.body != RobotBody::Wheeled || robot.def_id == "rice_harvester"
 }
 
+fn movement_rate(body: RobotBody) -> f32 {
+    match body {
+        RobotBody::Flying => 0.55,
+        RobotBody::Quadruped | RobotBody::Hexapod => 0.38,
+        RobotBody::Biped => 0.32,
+        RobotBody::Wheeled => 0.28,
+    }
+}
+
 fn jobs_share_work_patch(
     first_kind: JobKind,
     first_position: TilePos,
@@ -1746,17 +1875,25 @@ fn jobs_share_work_patch(
     if first_kind == second_kind && first_position == second_position {
         return true;
     }
-    let first_group = tending_group(first_kind);
+    let first_group = work_group(first_kind);
     first_group != 0
-        && first_group == tending_group(second_kind)
+        && first_group == work_group(second_kind)
         && first_position.manhattan(second_position) <= 2
 }
 
-fn tending_group(kind: JobKind) -> u8 {
+fn work_group(kind: JobKind) -> u8 {
     match kind {
-        JobKind::Weed => 1,
-        JobKind::LoosenSoil => 2,
-        JobKind::PestControl | JobKind::SprayPests | JobKind::LaserPests => 3,
+        JobKind::Plow => 1,
+        JobKind::Till => 2,
+        JobKind::FloodPaddy => 3,
+        JobKind::Seed | JobKind::Plant | JobKind::Transplant => 4,
+        JobKind::Water => 5,
+        JobKind::Pollinate => 6,
+        JobKind::Inspect => 7,
+        JobKind::Weed => 8,
+        JobKind::LoosenSoil => 9,
+        JobKind::PestControl | JobKind::SprayPests | JobKind::LaserPests => 10,
+        JobKind::Harvest | JobKind::PrecisionHarvest | JobKind::Dig => 11,
         _ => 0,
     }
 }
@@ -1876,6 +2013,94 @@ mod tests {
         assert!(simulation.robots.iter().all(
             |robot| robot.state == RobotState::Parked && robot.position == robot.home_position
         ));
+        assert!(
+            simulation
+                .grid
+                .tile(TilePos::new(40, 5))
+                .is_some_and(|tile| tile.building.is_some())
+        );
+        assert!(simulation.map.garage_bays.iter().all(|bay| {
+            simulation
+                .grid
+                .tile(*bay)
+                .is_some_and(|tile| tile.building.is_none())
+        }));
+        Ok(())
+    }
+
+    #[test]
+    fn generated_map_definition_drives_navigation_and_scenario_layout()
+    -> Result<(), SimulationError> {
+        let simulation = simulation()?;
+        assert_eq!((simulation.map.width, simulation.map.height), (64, 64));
+        assert_eq!(simulation.map.tile_size, 32);
+        assert_eq!(
+            simulation.map.terrain_tileset_asset,
+            "art/pixel/tilesets/verdant-paddy-terrain.png"
+        );
+        assert_eq!(simulation.zones[0].size, (11, 28));
+        assert_eq!(simulation.zones[1].size, (13, 28));
+        assert_eq!(
+            simulation
+                .grid
+                .tile(TilePos::new(6, 16))
+                .map(|tile| tile.terrain),
+            Some(TerrainKind::Culvert)
+        );
+        assert_eq!(
+            simulation
+                .grid
+                .tile(TilePos::new(10, 16))
+                .map(|tile| tile.terrain),
+            Some(TerrainKind::FarmPath)
+        );
+        assert_eq!(
+            simulation
+                .grid
+                .tile(TilePos::new(6, 30))
+                .map(|tile| tile.terrain),
+            Some(TerrainKind::IrrigationChannel)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn wheeled_motion_advances_every_simulation_minute() -> Result<(), SimulationError> {
+        let mut simulation = simulation()?;
+        let rover_index = simulation
+            .robots
+            .iter()
+            .position(|robot| robot.def_id == "paddy_rover")
+            .ok_or_else(|| missing("paddy rover should exist"))?;
+        let start = TilePos::new(40, 12);
+        let target = TilePos::new(40, 13);
+        simulation.robots[rover_index].position = start;
+
+        for expected_progress in [0.28, 0.56, 0.84] {
+            simulation.move_robot(rover_index, target);
+            let rover = &simulation.robots[rover_index];
+            assert_eq!(rover.position, start);
+            assert_eq!(rover.movement_target, Some(target));
+            assert!((rover.movement_progress - expected_progress).abs() < 0.001);
+        }
+        simulation.move_robot(rover_index, target);
+        assert_eq!(simulation.robots[rover_index].position, target);
+        assert_eq!(simulation.robots[rover_index].movement_target, None);
+        Ok(())
+    }
+
+    #[test]
+    fn robots_reserve_their_incoming_tile() -> Result<(), SimulationError> {
+        let mut simulation = simulation()?;
+        let first = 0;
+        let second = 1;
+        let reserved = TilePos::new(41, 16);
+        simulation.robots[first].position = TilePos::new(40, 16);
+        simulation.robots[second].position = TilePos::new(42, 16);
+        simulation.move_robot(first, reserved);
+        simulation.move_robot(second, reserved);
+        assert_eq!(simulation.robots[first].movement_target, Some(reserved));
+        assert_eq!(simulation.robots[second].movement_target, None);
         Ok(())
     }
 
@@ -1935,6 +2160,12 @@ mod tests {
             simulation
                 .grid
                 .tile(location)
+                .is_some_and(|tile| tile.plowed && !tile.tilled)
+        );
+        assert!(
+            simulation
+                .grid
+                .tile(TilePos::new(location.x + 1, location.y + 1))
                 .is_some_and(|tile| tile.plowed && !tile.tilled)
         );
         assert_eq!(simulation.robots[rover_index].state, RobotState::Idle);
@@ -2176,7 +2407,7 @@ mod tests {
     fn harvest_reaches_inventory_and_packer() -> Result<(), SimulationError> {
         let mut simulation = simulation()?;
         simulation.current_contract = None;
-        let position = TilePos::new(10, 10);
+        let position = TilePos::new(10, 20);
         simulation.zones = vec![FieldZone {
             id: 99,
             name: "Harvest Test".to_owned(),

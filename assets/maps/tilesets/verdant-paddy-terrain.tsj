@@ -1,0 +1,351 @@
+{
+  "type": "tileset",
+  "tiledversion": "1.12.2",
+  "version": "1.10",
+  "name": "verdant-paddy-terrain",
+  "tilewidth": 32,
+  "tileheight": 32,
+  "tilecount": 16,
+  "columns": 4,
+  "image": "../../art/pixel/tilesets/verdant-paddy-terrain.png",
+  "imagewidth": 128,
+  "imageheight": 128,
+  "tiles": [
+    {
+      "id": 0,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Grass"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "Grass"
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "value": "base"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Grass Flowers"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "Grass"
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "value": "flowers"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Grass Weeds"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "Grass"
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "value": "weeds"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Rock Boundary"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "Rock"
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "value": "boundary"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Dry Paddy Soil"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "Soil"
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "value": "dry"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Wet Paddy Mud"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "Soil"
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "value": "wet"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Ploughed Soil"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "Soil"
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "value": "plowed"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Rotary Tilled Soil"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "Soil"
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "value": "tilled"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Stone Service Road"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "FarmPath"
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "value": "road"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Dirt Farm Path"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "FarmPath"
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "value": "path"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Concrete Apron"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "Concrete"
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "value": "apron"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Culvert Deck"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "Culvert"
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "value": "culvert"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Irrigation Channel"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "IrrigationChannel"
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "value": "channel"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "River Water"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "Water"
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "value": "river"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Paddy Bund"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "PaddyBund"
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "value": "bund"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "class": "TerrainTile",
+      "properties": [
+        {
+          "name": "display_name",
+          "type": "string",
+          "value": "Field Entrance"
+        },
+        {
+          "name": "terrain",
+          "type": "string",
+          "value": "FarmPath"
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "value": "entrance"
+        }
+      ]
+    }
+  ]
+}

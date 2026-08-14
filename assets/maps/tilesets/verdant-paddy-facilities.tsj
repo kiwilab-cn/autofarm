@@ -1,0 +1,115 @@
+{
+  "type": "tileset",
+  "tiledversion": "1.12.2",
+  "version": "1.10",
+  "name": "verdant-paddy-facilities",
+  "tilewidth": 256,
+  "tileheight": 256,
+  "tilecount": 9,
+  "columns": 3,
+  "objectalignment": "topleft",
+  "image": "../../art/pixel/tilesets/verdant-paddy-facilities.png",
+  "imagewidth": 768,
+  "imageheight": 768,
+  "tiles": [
+    {
+      "id": 0,
+      "class": "FacilityTile",
+      "properties": [
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "RobotGarage"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "class": "FacilityTile",
+      "properties": [
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "Warehouse"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "class": "FacilityTile",
+      "properties": [
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "ChargingStation"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "class": "FacilityTile",
+      "properties": [
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "ShippingDock"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "class": "FacilityTile",
+      "properties": [
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "Packer"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "class": "FacilityTile",
+      "properties": [
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "SolarGenerator"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "class": "FacilityTile",
+      "properties": [
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "Battery"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "class": "FacilityTile",
+      "properties": [
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "WaterPump"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "class": "FacilityTile",
+      "properties": [
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "IrrigationNode"
+        }
+      ]
+    }
+  ]
+}

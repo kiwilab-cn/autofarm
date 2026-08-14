@@ -1,6 +1,7 @@
 mod autonomy;
 mod command;
 mod content;
+mod map;
 mod model;
 mod pathfinding;
 mod simulation;
@@ -11,5 +12,9 @@ pub use command::{
     GameCommand,
 };
 pub use content::{ContentCatalog, ContentError};
+pub use map::{
+    MapCollisionAreaDef, MapDefinition, MapError, MapFacilityDef, MapNavigationAreaDef,
+    MapTileCellDef, MapTileLayerDef, MapTilesetKind, MapZoneDef,
+};
 pub use model::*;
 pub use simulation::{GameSimulation, SimulationError};
