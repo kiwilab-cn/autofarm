@@ -20,7 +20,7 @@ The default `MockLlmProvider` needs no API key. Remote-provider settings are rea
 | `WASD` / arrows | Pan the farm camera |
 | Mouse wheel | Zoom |
 | `Space` | Pause / resume |
-| `1`, `2`, `3`, `4` | Set speed to 1x / 4x / 16x / pause |
+| `1`, `2`, `3`, `4` | Set speed to 1x / 8x / 64x / pause |
 | `F` | Cycle the crop selected for a new field |
 | Left drag | Create the selected crop field |
 | `R` | Purchase the next robot body |
@@ -36,12 +36,14 @@ The default `MockLlmProvider` needs no API key. Remote-provider settings are rea
 
 The left build panel and bottom hint bar mirror these controls. The camera opens on a 10×8 flooded paddy with large 32-pixel tiles, six visible rice growth stages, and a role-specific fleet:
 
-- the wheeled paddy rover tills, floods, and maintains water levels;
-- the six-legged transplanter places seedlings;
-- the quadcopter sprays or uses its laser to clear pests;
+- the wheeled paddy rover tills and floods empty paddies before planting;
+- the six-legged spider transplanter places seedlings, irrigates planted rows, removes weeds, and loosens compacted mud;
+- the quadcopter alternates targeted spray and laser pest control;
 - the tracked harvester collects mature golden rice.
 
-All four machines claim typed jobs automatically. Select a tile to inspect paddy water, crop health, pest pressure, current growth stage, and queued work.
+Wheeled preparation equipment cannot path through planted tiles. Once seedlings are present, only legged machines enter until a mature crop creates a harvester job. Each specialist has a four-frame travel cycle and four-frame work cycle, while visual movement interpolates independently from simulation speed.
+
+The calendar uses four 28-day seasons. Rice takes roughly 18 in-game days to move from transplanting to a harvest-ready golden stage and stops growing in winter. Select a tile to inspect crop age, stage days, paddy water, weeds, soil compaction, pest pressure, and queued work.
 
 ## Architecture
 

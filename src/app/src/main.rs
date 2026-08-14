@@ -19,7 +19,7 @@ fn main() -> anyhow::Result<()> {
     let mut session = GameSession::new(simulation);
     if smoke_mode {
         session.screen = state::ScreenMode::Playing;
-        session.simulation.clock.speed = 16;
+        session.simulation.clock.speed = 64;
         session.status = "Automated runtime smoke test.".to_owned();
     }
     let mut app = App::new();

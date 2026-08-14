@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use autofarm_editor::PreviewKind;
-use autofarm_sim::{CropInstance, FacilityKind, JobKind, Robot, RobotBody, RobotState, TilePos};
+use autofarm_sim::{
+    CropInstance, FacilityKind, JobKind, Robot, RobotBody, RobotState, Season, TerrainKind, TilePos,
+};
 use bevy::prelude::*;
 
 use crate::{
@@ -49,6 +51,10 @@ struct PixelArtAssets {
     rice_transplanter: Handle<Image>,
     pest_control_drone: Handle<Image>,
     rice_harvester: Handle<Image>,
+    paddy_rover_sheet: Handle<Image>,
+    rice_spider_sheet: Handle<Image>,
+    pest_drone_sheet: Handle<Image>,
+    rice_harvester_sheet: Handle<Image>,
 }
 
 impl PixelArtAssets {
@@ -67,6 +73,10 @@ impl PixelArtAssets {
             rice_transplanter: assets.load("art/pixel/rice-transplanter.png"),
             pest_control_drone: assets.load("art/pixel/pest-control-drone.png"),
             rice_harvester: assets.load("art/pixel/rice-harvester.png"),
+            paddy_rover_sheet: assets.load("art/pixel/animations/paddy-rover-sheet.png"),
+            rice_spider_sheet: assets.load("art/pixel/animations/rice-spider-sheet.png"),
+            pest_drone_sheet: assets.load("art/pixel/animations/pest-drone-sheet.png"),
+            rice_harvester_sheet: assets.load("art/pixel/animations/rice-harvester-sheet.png"),
         }
     }
 
@@ -79,6 +89,16 @@ impl PixelArtAssets {
             _ => None,
         }
     }
+
+    fn robot_animation(&self, def_id: &str) -> Option<Handle<Image>> {
+        match def_id {
+            "paddy_rover" => Some(self.paddy_rover_sheet.clone()),
+            "rice_transplanter" => Some(self.rice_spider_sheet.clone()),
+            "pest_control_drone" => Some(self.pest_drone_sheet.clone()),
+            "rice_harvester" => Some(self.rice_harvester_sheet.clone()),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Component)]
@@ -88,7 +108,9 @@ struct TileVisual(TilePos);
 struct CropVisual(TilePos);
 
 #[derive(Component)]
-struct RobotVisual(u64);
+struct RobotVisual {
+    id: u64,
+}
 
 #[derive(Component)]
 struct BatteryBar(u64);
@@ -128,7 +150,9 @@ fn setup_world(mut commands: Commands, session: Res<GameSession>, assets: Res<As
                 .simulation
                 .grid
                 .tile(position)
-                .map_or(theme::BACKGROUND, |tile| theme::terrain_color(tile.terrain));
+                .map_or(theme::BACKGROUND, |tile| {
+                    seasonal_terrain_color(tile.terrain, session.simulation.clock.season())
+                });
             commands.spawn((
                 Sprite::from_color(color, Vec2::splat(TILE_SIZE - 1.5)),
                 Transform::from_translation(tile_world(position).extend(0.0)),
@@ -177,7 +201,7 @@ fn update_tile_visuals(
             sprite.color = if tile.tilled {
                 Color::srgb(0.24, 0.13, 0.07)
             } else {
-                theme::terrain_color(tile.terrain)
+                seasonal_terrain_color(tile.terrain, session.simulation.clock.season())
             };
         }
     }
@@ -245,6 +269,7 @@ fn sync_robot_visuals(
     mut commands: Commands,
     session: Res<GameSession>,
     assets: Res<PixelArtAssets>,
+    time: Res<Time>,
     mut visuals: Query<(Entity, &RobotVisual, &mut Transform, &mut Sprite)>,
     mut battery_bars: Query<(&BatteryBar, &mut Sprite, &mut Transform), Without<RobotVisual>>,
 ) {
@@ -254,14 +279,25 @@ fn sync_robot_visuals(
             .simulation
             .robots
             .iter()
-            .find(|robot| robot.id == visual.0)
+            .find(|robot| robot.id == visual.id)
         else {
             commands.entity(entity).despawn();
             continue;
         };
         existing.insert(robot.id);
-        transform.translation = robot_world(robot);
-        configure_robot_sprite(&mut sprite, robot, &assets);
+        let target = robot_world(robot);
+        let distance = target.truncate() - transform.translation.truncate();
+        let max_step = robot_visual_speed(robot) * time.delta_secs();
+        if distance.length() <= max_step {
+            transform.translation = target;
+        } else if let Some(direction) = distance.try_normalize() {
+            transform.translation += (direction * max_step).extend(0.0);
+            transform.translation.z = target.z;
+        }
+        let close_to_target = distance.length() < 4.0;
+        let job_kind = robot_job_kind(&session, robot);
+        let frame = robot_animation_frame(robot, job_kind, close_to_target, time.elapsed_secs());
+        configure_robot_sprite(&mut sprite, robot, &assets, frame);
     }
     for robot in &session.simulation.robots {
         if existing.contains(&robot.id) {
@@ -269,12 +305,12 @@ fn sync_robot_visuals(
         }
         let size = robot_size(&robot.def_id, robot.body);
         let mut sprite = Sprite::default();
-        configure_robot_sprite(&mut sprite, robot, &assets);
+        configure_robot_sprite(&mut sprite, robot, &assets, 0);
         commands
             .spawn((
                 sprite,
                 Transform::from_translation(robot_world(robot)),
-                RobotVisual(robot.id),
+                RobotVisual { id: robot.id },
             ))
             .with_children(|parent| {
                 parent.spawn((
@@ -310,6 +346,7 @@ fn sync_work_effects(
     mut commands: Commands,
     session: Res<GameSession>,
     mut visuals: Query<(Entity, &WorkEffectVisual, &mut Transform, &mut Sprite)>,
+    robots: Query<(&RobotVisual, &Transform), Without<WorkEffectVisual>>,
 ) {
     let mut wanted = BTreeMap::new();
     for robot in &session.simulation.robots {
@@ -325,6 +362,17 @@ fn sync_work_effects(
         else {
             continue;
         };
+        let visual_is_present = robots.iter().any(|(visual, transform)| {
+            visual.id == robot.id
+                && transform
+                    .translation
+                    .truncate()
+                    .distance(robot_world(robot).truncate())
+                    < 6.0
+        });
+        if !visual_is_present {
+            continue;
+        }
         wanted.insert(robot.id, work_effect(robot.position, kind));
     }
 
@@ -559,14 +607,77 @@ fn crop_world(position: TilePos, crop: &CropInstance) -> Vec3 {
     (tile_world(position) + Vec2::Y * lift).extend(4.0)
 }
 
-fn configure_robot_sprite(sprite: &mut Sprite, robot: &Robot, assets: &PixelArtAssets) {
+fn configure_robot_sprite(
+    sprite: &mut Sprite,
+    robot: &Robot,
+    assets: &PixelArtAssets,
+    frame: usize,
+) {
     sprite.custom_size = Some(robot_size(&robot.def_id, robot.body));
-    if let Some(image) = assets.robot(&robot.def_id) {
+    if let Some(image) = assets.robot_animation(&robot.def_id) {
         sprite.image = image;
+        let column = (frame % 4) as f32;
+        let row = (frame / 4).min(1) as f32;
+        sprite.rect = Some(Rect::new(
+            column * 128.0,
+            row * 128.0,
+            (column + 1.0) * 128.0,
+            (row + 1.0) * 128.0,
+        ));
+        sprite.color = Color::WHITE;
+    } else if let Some(image) = assets.robot(&robot.def_id) {
+        sprite.image = image;
+        sprite.rect = None;
         sprite.color = Color::WHITE;
     } else {
         sprite.image = Handle::default();
+        sprite.rect = None;
         sprite.color = robot_color(robot.body);
+    }
+}
+
+fn robot_job_kind(session: &GameSession, robot: &Robot) -> Option<JobKind> {
+    robot.current_job.and_then(|job_id| {
+        session
+            .simulation
+            .jobs
+            .iter()
+            .find(|job| job.id == job_id)
+            .map(|job| job.kind)
+    })
+}
+
+fn robot_animation_frame(
+    robot: &Robot,
+    job_kind: Option<JobKind>,
+    close_to_target: bool,
+    elapsed_seconds: f32,
+) -> usize {
+    let moving = matches!(
+        robot.state,
+        RobotState::MovingToJob(_) | RobotState::MovingToCharge | RobotState::MovingToStorage
+    ) || !close_to_target;
+    let working = matches!(robot.state, RobotState::Working(_)) && close_to_target;
+    if working {
+        let phase = (elapsed_seconds / 0.72) as usize % 4;
+        return match (robot.def_id.as_str(), job_kind) {
+            ("pest_control_drone", Some(JobKind::SprayPests)) => 4 + phase % 2,
+            ("pest_control_drone", Some(JobKind::LaserPests)) => 6 + phase % 2,
+            _ => 4 + phase,
+        };
+    }
+    if moving {
+        return (elapsed_seconds / 0.56) as usize % 4;
+    }
+    0
+}
+
+fn robot_visual_speed(robot: &Robot) -> f32 {
+    match robot.body {
+        RobotBody::Flying => 42.0,
+        RobotBody::Quadruped | RobotBody::Hexapod => 24.0,
+        RobotBody::Biped => 22.0,
+        RobotBody::Wheeled => 27.0,
     }
 }
 
@@ -597,10 +708,30 @@ fn work_effect(position: TilePos, kind: JobKind) -> (Vec3, Vec2, Color) {
             Vec2::new(24.0, 7.0),
             Color::srgba(0.42, 1.0, 0.38, 0.84),
         ),
+        JobKind::Weed => (
+            (center - Vec2::Y * 10.0).extend(8.0),
+            Vec2::new(28.0, 5.0),
+            Color::srgba(0.42, 0.92, 0.24, 0.72),
+        ),
+        JobKind::LoosenSoil => (
+            (center - Vec2::Y * 10.0).extend(8.0),
+            Vec2::new(36.0, 6.0),
+            Color::srgba(0.64, 0.34, 0.14, 0.72),
+        ),
+        JobKind::SprayPests => (
+            (center - Vec2::Y * 17.0).extend(11.0),
+            Vec2::new(18.0, 30.0),
+            Color::srgba(0.34, 0.82, 1.0, 0.34),
+        ),
+        JobKind::LaserPests => (
+            (center - Vec2::Y * 15.0).extend(11.0),
+            Vec2::new(3.0, 42.0),
+            Color::srgba(0.18, 0.96, 1.0, 0.86),
+        ),
         JobKind::PestControl | JobKind::Pollinate | JobKind::Inspect => (
             (center - Vec2::Y * 15.0).extend(11.0),
-            Vec2::new(4.0, 38.0),
-            Color::srgba(0.18, 0.96, 1.0, 0.86),
+            Vec2::new(5.0, 34.0),
+            Color::srgba(0.18, 0.96, 1.0, 0.68),
         ),
         JobKind::Harvest | JobKind::PrecisionHarvest | JobKind::Dig => (
             (center - Vec2::Y * 10.0).extend(8.0),
@@ -624,5 +755,17 @@ fn facility_color(kind: FacilityKind) -> Color {
         FacilityKind::ShippingDock => Color::srgb(0.42, 0.63, 0.72),
         FacilityKind::SolarGenerator => Color::srgb(0.14, 0.25, 0.58),
         FacilityKind::Battery => Color::srgb(0.50, 0.86, 0.32),
+    }
+}
+
+fn seasonal_terrain_color(terrain: TerrainKind, season: Season) -> Color {
+    match (terrain, season) {
+        (TerrainKind::Grass, Season::Summer) => Color::srgb(0.25, 0.44, 0.16),
+        (TerrainKind::Grass, Season::Autumn) => Color::srgb(0.36, 0.32, 0.13),
+        (TerrainKind::Grass, Season::Winter) => Color::srgb(0.25, 0.30, 0.28),
+        (TerrainKind::Soil | TerrainKind::RoughSoil, Season::Winter) => {
+            Color::srgb(0.28, 0.24, 0.20)
+        }
+        _ => theme::terrain_color(terrain),
     }
 }

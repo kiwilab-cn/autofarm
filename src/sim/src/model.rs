@@ -90,6 +90,7 @@ impl CropDef {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CropInstance {
     pub crop_id: String,
+    pub planted_at: u64,
     pub stage_index: usize,
     pub stage_progress: u32,
     pub moisture: u8,
@@ -98,6 +99,8 @@ pub struct CropInstance {
     pub inspection_due: bool,
     pub pest_pressure: u8,
     pub pest_controlled: bool,
+    pub weed_pressure: u8,
+    pub soil_compaction: u8,
     pub remaining_harvests: u8,
 }
 
@@ -216,6 +219,9 @@ pub enum Capability {
     Pack,
     Spray,
     PestControl,
+    Weed,
+    LoosenSoil,
+    LaserPestControl,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -327,6 +333,10 @@ pub enum JobKind {
     Pollinate,
     Inspect,
     PestControl,
+    Weed,
+    LoosenSoil,
+    SprayPests,
+    LaserPests,
     Harvest,
     PrecisionHarvest,
     Dig,
@@ -349,6 +359,10 @@ impl JobKind {
             Self::Pollinate => Capability::Pollinate,
             Self::Inspect => Capability::Inspect,
             Self::PestControl => Capability::PestControl,
+            Self::Weed => Capability::Weed,
+            Self::LoosenSoil => Capability::LoosenSoil,
+            Self::SprayPests => Capability::Spray,
+            Self::LaserPests => Capability::LaserPestControl,
             Self::Harvest => Capability::Harvest,
             Self::PrecisionHarvest => Capability::PrecisionHarvest,
             Self::Dig => Capability::Dig,
@@ -362,19 +376,13 @@ impl JobKind {
     #[must_use]
     pub const fn effort(self) -> f32 {
         match self {
-            Self::Dig | Self::Repair => 4.0,
-            Self::Harvest
-            | Self::PrecisionHarvest
-            | Self::Till
-            | Self::FloodPaddy
-            | Self::Transplant => 3.0,
-            Self::Seed
-            | Self::Plant
-            | Self::Water
-            | Self::Pollinate
-            | Self::Inspect
-            | Self::PestControl => 2.0,
-            Self::Haul | Self::Recharge | Self::Pack => 1.0,
+            Self::Harvest | Self::PrecisionHarvest => 18.0,
+            Self::Till | Self::Dig | Self::Repair => 14.0,
+            Self::FloodPaddy | Self::LoosenSoil => 12.0,
+            Self::Transplant | Self::Weed => 10.0,
+            Self::Seed | Self::Plant | Self::Water | Self::Pollinate | Self::Inspect => 8.0,
+            Self::PestControl | Self::SprayPests | Self::LaserPests => 6.0,
+            Self::Haul | Self::Recharge | Self::Pack => 4.0,
         }
     }
 }
@@ -492,6 +500,14 @@ pub enum Weather {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Season {
+    Spring,
+    Summer,
+    Autumn,
+    Winter,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SimClock {
     pub minute: u64,
     pub paused: bool,
@@ -509,19 +525,44 @@ impl Default for SimClock {
 }
 
 impl SimClock {
+    pub const MINUTES_PER_DAY: u64 = 1_440;
+    pub const DAYS_PER_SEASON: u64 = 28;
+    pub const SEASONS_PER_YEAR: u64 = 4;
+
     #[must_use]
     pub fn day(self) -> u64 {
-        self.minute / 1440 + 1
+        self.minute / Self::MINUTES_PER_DAY + 1
     }
 
     #[must_use]
     pub fn hour(self) -> u64 {
-        (self.minute % 1440) / 60
+        (self.minute % Self::MINUTES_PER_DAY) / 60
     }
 
     #[must_use]
     pub fn minute_of_hour(self) -> u64 {
         self.minute % 60
+    }
+
+    #[must_use]
+    pub fn year(self) -> u64 {
+        let days_per_year = Self::DAYS_PER_SEASON * Self::SEASONS_PER_YEAR;
+        (self.day() - 1) / days_per_year + 1
+    }
+
+    #[must_use]
+    pub fn season(self) -> Season {
+        match ((self.day() - 1) / Self::DAYS_PER_SEASON) % Self::SEASONS_PER_YEAR {
+            0 => Season::Spring,
+            1 => Season::Summer,
+            2 => Season::Autumn,
+            _ => Season::Winter,
+        }
+    }
+
+    #[must_use]
+    pub fn day_of_season(self) -> u64 {
+        (self.day() - 1) % Self::DAYS_PER_SEASON + 1
     }
 }
 

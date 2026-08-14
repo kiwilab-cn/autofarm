@@ -105,8 +105,8 @@ fn handle_session_keys(
     }
     for (key, speed) in [
         (KeyCode::Digit1, 1),
-        (KeyCode::Digit2, 4),
-        (KeyCode::Digit3, 16),
+        (KeyCode::Digit2, 8),
+        (KeyCode::Digit3, 64),
         (KeyCode::Digit4, 0),
     ] {
         if keyboard.just_pressed(key) {
