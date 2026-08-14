@@ -115,6 +115,56 @@ pub fn plan_for_intent(prompt: &str, revision: u64) -> Result<EditorPlan, Editor
         temperature: 0.2,
         ..LlmRequestParams::default()
     };
+    if normalized.contains("rice") || normalized.contains("水稻") || normalized.contains("稻田")
+    {
+        return Ok(EditorPlan {
+            summary: "Create a second autonomous rice cell".to_owned(),
+            rationale: "The plan pairs a flooded paddy with the four specialist machines required for preparation, transplanting, protection, and harvest.".to_owned(),
+            expected_world_revision: revision,
+            commands: vec![
+                EditorCommand::CreateFieldZone {
+                    origin: TilePos::new(12, 24),
+                    size: (10, 8),
+                    crop_id: "rice".to_owned(),
+                },
+                EditorCommand::SpawnRobot {
+                    robot_def_id: "paddy_rover".to_owned(),
+                    count: 1,
+                    position: TilePos::new(24, 24),
+                },
+                EditorCommand::SpawnRobot {
+                    robot_def_id: "rice_transplanter".to_owned(),
+                    count: 1,
+                    position: TilePos::new(24, 24),
+                },
+                EditorCommand::SpawnRobot {
+                    robot_def_id: "pest_control_drone".to_owned(),
+                    count: 1,
+                    position: TilePos::new(24, 24),
+                },
+                EditorCommand::SpawnRobot {
+                    robot_def_id: "rice_harvester".to_owned(),
+                    count: 1,
+                    position: TilePos::new(24, 24),
+                },
+            ],
+            preview: vec![
+                PreviewMarker {
+                    kind: PreviewKind::Field,
+                    position: TilePos::new(12, 24),
+                    size: (10, 8),
+                    label: "Flooded Rice Paddy".to_owned(),
+                },
+                PreviewMarker {
+                    kind: PreviewKind::Robot,
+                    position: TilePos::new(24, 24),
+                    size: (2, 2),
+                    label: "Rice Specialist Fleet".to_owned(),
+                },
+            ],
+            params,
+        });
+    }
     if normalized.contains("tomato") || normalized.contains("番茄") {
         return Ok(EditorPlan {
             summary: "Create the north tomato automation cell".to_owned(),
@@ -122,13 +172,13 @@ pub fn plan_for_intent(prompt: &str, revision: u64) -> Result<EditorPlan, Editor
             expected_world_revision: revision,
             commands: vec![
                 EditorCommand::CreateFieldZone {
-                    origin: TilePos::new(20, 8),
+                    origin: TilePos::new(32, 8),
                     size: (8, 12),
                     crop_id: "tomato".to_owned(),
                 },
                 EditorCommand::PlaceBuilding {
                     kind: FacilityKind::IrrigationNode,
-                    position: TilePos::new(29, 14),
+                    position: TilePos::new(41, 14),
                 },
                 EditorCommand::SpawnRobot {
                     robot_def_id: "pollination_drone".to_owned(),
@@ -139,13 +189,13 @@ pub fn plan_for_intent(prompt: &str, revision: u64) -> Result<EditorPlan, Editor
             preview: vec![
                 PreviewMarker {
                     kind: PreviewKind::Field,
-                    position: TilePos::new(20, 8),
+                    position: TilePos::new(32, 8),
                     size: (8, 12),
                     label: "Tomato Field".to_owned(),
                 },
                 PreviewMarker {
                     kind: PreviewKind::Facility,
-                    position: TilePos::new(29, 14),
+                    position: TilePos::new(41, 14),
                     size: (1, 1),
                     label: "Irrigation".to_owned(),
                 },

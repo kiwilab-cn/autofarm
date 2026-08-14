@@ -58,7 +58,7 @@ impl ContentCatalog {
     }
 
     fn validate(&self) -> Result<(), ContentError> {
-        for crop in ["wheat", "potato", "tomato", "strawberry"] {
+        for crop in ["rice", "wheat", "potato", "tomato", "strawberry"] {
             let Some(definition) = self.crops.get(crop) else {
                 return Err(ContentError::MissingRequired(crop.to_owned()));
             };
@@ -70,6 +70,10 @@ impl ContentCatalog {
             }
         }
         for robot in [
+            "paddy_rover",
+            "rice_transplanter",
+            "pest_control_drone",
+            "rice_harvester",
             "basic_rover",
             "pollination_drone",
             "field_quadruped",
