@@ -46,12 +46,14 @@ struct VisualCache {
 #[derive(Resource)]
 struct PixelArtAssets {
     paddy_water: Handle<Image>,
+    paddy_infrastructure: Handle<Image>,
     rice_stages: [Handle<Image>; 6],
     paddy_rover: Handle<Image>,
     rice_transplanter: Handle<Image>,
     pest_control_drone: Handle<Image>,
     rice_harvester: Handle<Image>,
     paddy_rover_sheet: Handle<Image>,
+    paddy_rover_tools_sheet: Handle<Image>,
     rice_spider_sheet: Handle<Image>,
     pest_drone_sheet: Handle<Image>,
     rice_harvester_sheet: Handle<Image>,
@@ -60,23 +62,27 @@ struct PixelArtAssets {
 impl PixelArtAssets {
     fn load(assets: &AssetServer) -> Self {
         Self {
-            paddy_water: assets.load("art/pixel/paddy-water.png"),
+            paddy_water: assets.load("art/pixel/environment/paddy/flooded-field.png"),
+            paddy_infrastructure: assets
+                .load("art/pixel/environment/paddy/infrastructure-sheet.png"),
             rice_stages: [
-                assets.load("art/pixel/rice-stage-0.png"),
-                assets.load("art/pixel/rice-stage-1.png"),
-                assets.load("art/pixel/rice-stage-2.png"),
-                assets.load("art/pixel/rice-stage-3.png"),
-                assets.load("art/pixel/rice-stage-4.png"),
-                assets.load("art/pixel/rice-stage-5.png"),
+                assets.load("art/pixel/crops/rice/stage-0.png"),
+                assets.load("art/pixel/crops/rice/stage-1.png"),
+                assets.load("art/pixel/crops/rice/stage-2.png"),
+                assets.load("art/pixel/crops/rice/stage-3.png"),
+                assets.load("art/pixel/crops/rice/stage-4.png"),
+                assets.load("art/pixel/crops/rice/stage-5.png"),
             ],
-            paddy_rover: assets.load("art/pixel/paddy-rover.png"),
-            rice_transplanter: assets.load("art/pixel/rice-transplanter.png"),
-            pest_control_drone: assets.load("art/pixel/pest-control-drone.png"),
-            rice_harvester: assets.load("art/pixel/rice-harvester.png"),
-            paddy_rover_sheet: assets.load("art/pixel/animations/paddy-rover-sheet.png"),
-            rice_spider_sheet: assets.load("art/pixel/animations/rice-spider-sheet.png"),
-            pest_drone_sheet: assets.load("art/pixel/animations/pest-drone-sheet.png"),
-            rice_harvester_sheet: assets.load("art/pixel/animations/rice-harvester-sheet.png"),
+            paddy_rover: assets.load("art/pixel/robots/paddy-rover/idle.png"),
+            rice_transplanter: assets.load("art/pixel/robots/rice-spider/idle.png"),
+            pest_control_drone: assets.load("art/pixel/robots/pest-drone/idle.png"),
+            rice_harvester: assets.load("art/pixel/robots/rice-harvester/idle.png"),
+            paddy_rover_sheet: assets.load("art/pixel/robots/paddy-rover/motion-sheet.png"),
+            paddy_rover_tools_sheet: assets
+                .load("art/pixel/robots/paddy-rover/preparation-tools-sheet.png"),
+            rice_spider_sheet: assets.load("art/pixel/robots/rice-spider/motion-sheet.png"),
+            pest_drone_sheet: assets.load("art/pixel/robots/pest-drone/motion-sheet.png"),
+            rice_harvester_sheet: assets.load("art/pixel/robots/rice-harvester/motion-sheet.png"),
         }
     }
 
@@ -132,7 +138,7 @@ struct EditorPreviewVisual;
 
 fn setup_world(mut commands: Commands, session: Res<GameSession>, assets: Res<AssetServer>) {
     commands.insert_resource(PixelArtAssets::load(&assets));
-    let focus = tile_world(TilePos::new(19, 18));
+    let focus = tile_world(TilePos::new(27, 19));
     commands.spawn((
         Camera2d,
         Projection::Orthographic(OrthographicProjection {
@@ -180,33 +186,123 @@ fn update_tile_visuals(
     session: Res<GameSession>,
     assets: Res<PixelArtAssets>,
     mut cache: ResMut<VisualCache>,
-    mut tiles: Query<(&TileVisual, &mut Sprite)>,
+    mut tiles: Query<(&TileVisual, &mut Sprite, &mut Transform)>,
 ) {
     if cache.tile_minute == session.simulation.clock.minute
         && cache.tile_revision == session.simulation.world_revision
     {
         return;
     }
-    for (visual, mut sprite) in &mut tiles {
+    for (visual, mut sprite, mut transform) in &mut tiles {
         let Some(tile) = session.simulation.grid.tile(visual.0) else {
             continue;
         };
         sprite.custom_size = Some(Vec2::splat(TILE_SIZE - 1.5));
+        sprite.rect = None;
+        sprite.flip_x = false;
+        sprite.flip_y = false;
+        transform.rotation = Quat::IDENTITY;
         if tile.water_level > 0 {
             sprite.image = assets.paddy_water.clone();
             let brightness = 0.72 + f32::from(tile.water_level) / 360.0;
             sprite.color = Color::srgb(brightness, brightness, brightness);
         } else {
-            sprite.image = Handle::default();
-            sprite.color = if tile.tilled {
-                Color::srgb(0.24, 0.13, 0.07)
-            } else {
-                seasonal_terrain_color(tile.terrain, session.simulation.clock.season())
-            };
+            let has_infrastructure = configure_infrastructure_sprite(
+                &mut sprite,
+                &mut transform,
+                &session.simulation.grid,
+                visual.0,
+                tile.terrain,
+                &assets.paddy_infrastructure,
+            );
+            if !has_infrastructure {
+                sprite.image = Handle::default();
+                sprite.color = if tile.tilled {
+                    Color::srgb(0.24, 0.13, 0.07)
+                } else if tile.plowed {
+                    Color::srgb(0.33, 0.19, 0.09)
+                } else {
+                    seasonal_terrain_color(tile.terrain, session.simulation.clock.season())
+                };
+            }
         }
     }
     cache.tile_minute = session.simulation.clock.minute;
     cache.tile_revision = session.simulation.world_revision;
+}
+
+fn configure_infrastructure_sprite(
+    sprite: &mut Sprite,
+    transform: &mut Transform,
+    grid: &autofarm_sim::FarmGrid,
+    position: TilePos,
+    terrain: TerrainKind,
+    atlas: &Handle<Image>,
+) -> bool {
+    let same = |candidate: Option<TilePos>, kind: TerrainKind| {
+        candidate.is_some_and(|candidate| {
+            grid.tile(candidate)
+                .is_some_and(|tile| tile.terrain == kind)
+        })
+    };
+    let left = position
+        .x
+        .checked_sub(1)
+        .map(|x| TilePos::new(x, position.y));
+    let right = (position.x + 1 < grid.width).then_some(TilePos::new(position.x + 1, position.y));
+    let up = position
+        .y
+        .checked_sub(1)
+        .map(|y| TilePos::new(position.x, y));
+    let down = (position.y + 1 < grid.height).then_some(TilePos::new(position.x, position.y + 1));
+
+    let frame = match terrain {
+        TerrainKind::PaddyBund => {
+            let has_left = same(left, terrain);
+            let has_right = same(right, terrain);
+            let has_up = same(up, terrain);
+            let has_down = same(down, terrain);
+            if (has_left || has_right) && (has_up || has_down) {
+                sprite.flip_x = has_left && !has_right;
+                sprite.flip_y = has_up && !has_down;
+                2
+            } else if has_up || has_down {
+                1
+            } else {
+                0
+            }
+        }
+        TerrainKind::FarmPath => {
+            let horizontal = same(left, terrain) || same(right, terrain);
+            let vertical = same(up, terrain) || same(down, terrain);
+            if vertical && !horizontal {
+                transform.rotation = Quat::from_rotation_z(std::f32::consts::FRAC_PI_2);
+            }
+            3
+        }
+        TerrainKind::IrrigationChannel => {
+            if same(left, terrain) || same(right, terrain) {
+                4
+            } else {
+                5
+            }
+        }
+        TerrainKind::Culvert => 6,
+        TerrainKind::GarageApron => 7,
+        _ => return false,
+    };
+    let column = (frame % 4) as f32;
+    let row = (frame / 4) as f32;
+    sprite.image = atlas.clone();
+    sprite.rect = Some(Rect::new(
+        column * 128.0,
+        row * 128.0,
+        (column + 1.0) * 128.0,
+        (row + 1.0) * 128.0,
+    ));
+    sprite.custom_size = Some(Vec2::splat(TILE_SIZE + 0.5));
+    sprite.color = Color::WHITE;
+    true
 }
 
 fn sync_crop_visuals(
@@ -297,7 +393,10 @@ fn sync_robot_visuals(
         let close_to_target = distance.length() < 4.0;
         let job_kind = robot_job_kind(&session, robot);
         let frame = robot_animation_frame(robot, job_kind, close_to_target, time.elapsed_secs());
-        configure_robot_sprite(&mut sprite, robot, &assets, frame);
+        configure_robot_sprite(&mut sprite, robot, &assets, frame, job_kind);
+        if distance.x.abs() > 1.0 {
+            sprite.flip_x = distance.x < 0.0;
+        }
     }
     for robot in &session.simulation.robots {
         if existing.contains(&robot.id) {
@@ -305,7 +404,7 @@ fn sync_robot_visuals(
         }
         let size = robot_size(&robot.def_id, robot.body);
         let mut sprite = Sprite::default();
-        configure_robot_sprite(&mut sprite, robot, &assets, 0);
+        configure_robot_sprite(&mut sprite, robot, &assets, 0, None);
         commands
             .spawn((
                 sprite,
@@ -413,13 +512,14 @@ fn sync_facility_visuals(
         existing.insert(facility.id);
         transform.translation = tile_world(facility.position).extend(5.0);
         sprite.color = facility_color(facility.kind);
+        sprite.custom_size = Some(facility_size(facility.kind));
     }
     for facility in &session.simulation.facilities {
         if existing.contains(&facility.id) {
             continue;
         }
         commands.spawn((
-            Sprite::from_color(facility_color(facility.kind), Vec2::splat(TILE_SIZE - 5.0)),
+            Sprite::from_color(facility_color(facility.kind), facility_size(facility.kind)),
             Transform::from_translation(tile_world(facility.position).extend(5.0)),
             FacilityVisual(facility.id),
         ));
@@ -612,9 +712,27 @@ fn configure_robot_sprite(
     robot: &Robot,
     assets: &PixelArtAssets,
     frame: usize,
+    job_kind: Option<JobKind>,
 ) {
     sprite.custom_size = Some(robot_size(&robot.def_id, robot.body));
-    if let Some(image) = assets.robot_animation(&robot.def_id) {
+    let uses_preparation_tools = robot.def_id == "paddy_rover"
+        && matches!(job_kind, Some(JobKind::Plow | JobKind::Till))
+        && matches!(
+            robot.state,
+            RobotState::Preparing(_) | RobotState::Working(_) | RobotState::Finishing(_)
+        );
+    if uses_preparation_tools {
+        sprite.image = assets.paddy_rover_tools_sheet.clone();
+        let column = (frame % 4) as f32;
+        let row = (frame / 4).min(1) as f32;
+        sprite.rect = Some(Rect::new(
+            column * 128.0,
+            row * 128.0,
+            (column + 1.0) * 128.0,
+            (row + 1.0) * 128.0,
+        ));
+        sprite.color = Color::WHITE;
+    } else if let Some(image) = assets.robot_animation(&robot.def_id) {
         sprite.image = image;
         let column = (frame % 4) as f32;
         let row = (frame / 4).min(1) as f32;
@@ -655,21 +773,38 @@ fn robot_animation_frame(
 ) -> usize {
     let moving = matches!(
         robot.state,
-        RobotState::MovingToJob(_) | RobotState::MovingToCharge | RobotState::MovingToStorage
+        RobotState::Departing(_)
+            | RobotState::MovingToJob(_)
+            | RobotState::MovingToCharge
+            | RobotState::MovingToStorage
+            | RobotState::ReturningToGarage
     ) || !close_to_target;
-    let working = matches!(robot.state, RobotState::Working(_)) && close_to_target;
-    if working {
-        let phase = (elapsed_seconds / 0.72) as usize % 4;
-        return match (robot.def_id.as_str(), job_kind) {
-            ("pest_control_drone", Some(JobKind::SprayPests)) => 4 + phase % 2,
-            ("pest_control_drone", Some(JobKind::LaserPests)) => 6 + phase % 2,
-            _ => 4 + phase,
-        };
-    }
     if moving {
         return (elapsed_seconds / 0.56) as usize % 4;
     }
-    0
+    let phase = (elapsed_seconds / 0.72) as usize % 2;
+    if robot.def_id == "pest_control_drone" {
+        return match (job_kind, &robot.state) {
+            (Some(JobKind::SprayPests), RobotState::Preparing(_)) => 4,
+            (Some(JobKind::SprayPests), RobotState::Working(_)) => 4 + phase,
+            (Some(JobKind::SprayPests), RobotState::Finishing(_)) => 5,
+            (Some(JobKind::LaserPests), RobotState::Preparing(_)) => 6,
+            (Some(JobKind::LaserPests), RobotState::Working(_)) => 6 + phase,
+            (Some(JobKind::LaserPests), RobotState::Finishing(_)) => 7,
+            _ => 4,
+        };
+    }
+    let work_base = match (robot.def_id.as_str(), job_kind) {
+        ("paddy_rover", Some(JobKind::Plow)) => 0,
+        ("paddy_rover", Some(JobKind::Till)) => 4,
+        _ => 4,
+    };
+    match robot.state {
+        RobotState::Preparing(_) => work_base,
+        RobotState::Working(_) => (work_base + 1 + phase).min(work_base + 3).min(7),
+        RobotState::Finishing(_) => (work_base + 3).min(7),
+        _ => 0,
+    }
 }
 
 fn robot_visual_speed(robot: &Robot) -> f32 {
@@ -693,10 +828,15 @@ fn robot_world(robot: &Robot) -> Vec3 {
 fn work_effect(position: TilePos, kind: JobKind) -> (Vec3, Vec2, Color) {
     let center = tile_world(position);
     match kind {
+        JobKind::Plow => (
+            (center - Vec2::Y * 7.0).extend(8.0),
+            Vec2::new(54.0, 12.0),
+            Color::srgba(0.30, 0.12, 0.04, 0.82),
+        ),
         JobKind::Till => (
             (center - Vec2::Y * 9.0).extend(8.0),
-            Vec2::new(44.0, 9.0),
-            Color::srgba(0.92, 0.48, 0.16, 0.72),
+            Vec2::new(46.0, 18.0),
+            Color::srgba(0.62, 0.34, 0.13, 0.62),
         ),
         JobKind::FloodPaddy | JobKind::Water => (
             center.extend(8.0),
@@ -746,6 +886,7 @@ fn work_effect(position: TilePos, kind: JobKind) -> (Vec3, Vec2, Color) {
 
 fn facility_color(kind: FacilityKind) -> Color {
     match kind {
+        FacilityKind::RobotGarage => Color::srgba(0.12, 0.17, 0.18, 0.84),
         FacilityKind::Warehouse => Color::srgb(0.60, 0.48, 0.32),
         FacilityKind::SeedStorage => Color::srgb(0.72, 0.56, 0.20),
         FacilityKind::ChargingStation => Color::srgb(0.20, 0.78, 0.74),
@@ -758,6 +899,14 @@ fn facility_color(kind: FacilityKind) -> Color {
     }
 }
 
+fn facility_size(kind: FacilityKind) -> Vec2 {
+    if kind == FacilityKind::RobotGarage {
+        Vec2::new(TILE_SIZE * 5.2, TILE_SIZE * 4.2)
+    } else {
+        Vec2::splat(TILE_SIZE - 5.0)
+    }
+}
+
 fn seasonal_terrain_color(terrain: TerrainKind, season: Season) -> Color {
     match (terrain, season) {
         (TerrainKind::Grass, Season::Summer) => Color::srgb(0.25, 0.44, 0.16),
@@ -766,6 +915,11 @@ fn seasonal_terrain_color(terrain: TerrainKind, season: Season) -> Color {
         (TerrainKind::Soil | TerrainKind::RoughSoil, Season::Winter) => {
             Color::srgb(0.28, 0.24, 0.20)
         }
+        (TerrainKind::PaddyBund, _) => Color::srgb(0.38, 0.30, 0.13),
+        (TerrainKind::FarmPath, _) => Color::srgb(0.46, 0.40, 0.28),
+        (TerrainKind::IrrigationChannel, _) => Color::srgb(0.08, 0.40, 0.50),
+        (TerrainKind::Culvert, _) => Color::srgb(0.44, 0.44, 0.39),
+        (TerrainKind::GarageApron, _) => Color::srgb(0.34, 0.36, 0.34),
         _ => theme::terrain_color(terrain),
     }
 }

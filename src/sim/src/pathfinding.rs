@@ -1,4 +1,7 @@
-use std::{cmp::Reverse, collections::BinaryHeap};
+use std::{
+    cmp::Reverse,
+    collections::{BTreeSet, BinaryHeap},
+};
 
 use crate::{FarmGrid, RobotBody, TerrainKind, TilePos};
 
@@ -9,8 +12,9 @@ pub(crate) fn path_exists(
     goal: TilePos,
     body: RobotBody,
     allow_planted_fields: bool,
+    occupied: &BTreeSet<TilePos>,
 ) -> bool {
-    next_ground_step(grid, start, goal, body, allow_planted_fields).is_some()
+    next_ground_step(grid, start, goal, body, allow_planted_fields, occupied).is_some()
 }
 
 #[must_use]
@@ -20,13 +24,14 @@ pub(crate) fn next_ground_step(
     goal: TilePos,
     body: RobotBody,
     allow_planted_fields: bool,
+    occupied: &BTreeSet<TilePos>,
 ) -> Option<TilePos> {
     let start_index = grid.index(start)?;
     let goal_index = grid.index(goal)?;
     if start == goal {
         return Some(start);
     }
-    if !is_passable(grid, goal, body, allow_planted_fields) {
+    if !is_passable(grid, goal, goal, body, allow_planted_fields, occupied) {
         return None;
     }
 
@@ -45,12 +50,23 @@ pub(crate) fn next_ground_step(
         }
         let current = index_position(grid, current_index);
         for neighbor in neighbors(grid, current) {
-            if !is_passable(grid, neighbor, body, allow_planted_fields) {
+            if !is_passable(grid, neighbor, goal, body, allow_planted_fields, occupied) {
                 continue;
             }
             let step_cost = match (grid.tile(neighbor).map(|tile| tile.terrain), body) {
-                (Some(TerrainKind::RoughSoil), RobotBody::Wheeled) => 6,
+                (Some(TerrainKind::RoughSoil), RobotBody::Wheeled) => 7,
                 (Some(TerrainKind::RoughSoil), _) => 3,
+                (Some(TerrainKind::PaddyBund), _) => 2,
+                (
+                    Some(
+                        TerrainKind::Concrete
+                        | TerrainKind::FarmPath
+                        | TerrainKind::Culvert
+                        | TerrainKind::GarageApron,
+                    ),
+                    _,
+                ) => 1,
+                (Some(TerrainKind::Soil), RobotBody::Wheeled) => 2,
                 _ => 1,
             };
             let next_cost = current_cost.saturating_add(step_cost);
@@ -95,12 +111,19 @@ fn neighbors(grid: &FarmGrid, position: TilePos) -> impl Iterator<Item = TilePos
 fn is_passable(
     grid: &FarmGrid,
     position: TilePos,
+    goal: TilePos,
     body: RobotBody,
     allow_planted_fields: bool,
+    occupied: &BTreeSet<TilePos>,
 ) -> bool {
     grid.tile(position).is_some_and(|tile| {
-        !matches!(tile.terrain, TerrainKind::Water | TerrainKind::Rock)
+        !matches!(
+            tile.terrain,
+            TerrainKind::Water | TerrainKind::Rock | TerrainKind::IrrigationChannel
+        ) && !(body == RobotBody::Wheeled && tile.terrain == TerrainKind::PaddyBund)
             && (body != RobotBody::Wheeled || tile.crop.is_none() || allow_planted_fields)
+            && (position == goal || tile.building.is_none())
+            && !occupied.contains(&position)
     })
 }
 
@@ -133,6 +156,7 @@ mod tests {
             TilePos::new(3, 2),
             RobotBody::Quadruped,
             true,
+            &BTreeSet::new(),
         );
         assert!(step.is_some_and(|step| step != TilePos::new(2, 2)));
     }
@@ -149,6 +173,7 @@ mod tests {
             TilePos::new(3, 2),
             RobotBody::Wheeled,
             false,
+            &BTreeSet::new(),
         );
         assert!(step.is_some_and(|step| step != TilePos::new(2, 2)));
     }
@@ -165,6 +190,7 @@ mod tests {
             TilePos::new(3, 2),
             RobotBody::Biped,
             true,
+            &BTreeSet::new(),
         ));
     }
 
@@ -194,6 +220,39 @@ mod tests {
             TilePos::new(3, 2),
             RobotBody::Wheeled,
             false,
+            &BTreeSet::new(),
+        );
+        assert!(step.is_some_and(|step| step != TilePos::new(2, 2)));
+    }
+
+    #[test]
+    fn ground_robot_routes_around_another_robot() {
+        let grid = open_grid();
+        let occupied = BTreeSet::from([TilePos::new(2, 2)]);
+        let step = next_ground_step(
+            &grid,
+            TilePos::new(1, 2),
+            TilePos::new(3, 2),
+            RobotBody::Hexapod,
+            true,
+            &occupied,
+        );
+        assert!(step.is_some_and(|step| step != TilePos::new(2, 2)));
+    }
+
+    #[test]
+    fn wheeled_robot_protects_paddy_bunds() {
+        let mut grid = open_grid();
+        if let Some(tile) = grid.tile_mut(TilePos::new(2, 2)) {
+            tile.terrain = TerrainKind::PaddyBund;
+        }
+        let step = next_ground_step(
+            &grid,
+            TilePos::new(1, 2),
+            TilePos::new(3, 2),
+            RobotBody::Wheeled,
+            false,
+            &BTreeSet::new(),
         );
         assert!(step.is_some_and(|step| step != TilePos::new(2, 2)));
     }

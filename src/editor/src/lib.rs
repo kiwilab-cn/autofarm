@@ -123,41 +123,41 @@ pub fn plan_for_intent(prompt: &str, revision: u64) -> Result<EditorPlan, Editor
             expected_world_revision: revision,
             commands: vec![
                 EditorCommand::CreateFieldZone {
-                    origin: TilePos::new(12, 24),
+                    origin: TilePos::new(20, 36),
                     size: (10, 8),
                     crop_id: "rice".to_owned(),
                 },
                 EditorCommand::SpawnRobot {
                     robot_def_id: "paddy_rover".to_owned(),
                     count: 1,
-                    position: TilePos::new(24, 24),
+                    position: TilePos::new(32, 36),
                 },
                 EditorCommand::SpawnRobot {
                     robot_def_id: "rice_transplanter".to_owned(),
                     count: 1,
-                    position: TilePos::new(24, 24),
+                    position: TilePos::new(32, 36),
                 },
                 EditorCommand::SpawnRobot {
                     robot_def_id: "pest_control_drone".to_owned(),
                     count: 1,
-                    position: TilePos::new(24, 24),
+                    position: TilePos::new(32, 36),
                 },
                 EditorCommand::SpawnRobot {
                     robot_def_id: "rice_harvester".to_owned(),
                     count: 1,
-                    position: TilePos::new(24, 24),
+                    position: TilePos::new(32, 36),
                 },
             ],
             preview: vec![
                 PreviewMarker {
                     kind: PreviewKind::Field,
-                    position: TilePos::new(12, 24),
+                    position: TilePos::new(20, 36),
                     size: (10, 8),
                     label: "Flooded Rice Paddy".to_owned(),
                 },
                 PreviewMarker {
                     kind: PreviewKind::Robot,
-                    position: TilePos::new(24, 24),
+                    position: TilePos::new(32, 36),
                     size: (2, 2),
                     label: "Rice Specialist Fleet".to_owned(),
                 },
@@ -172,36 +172,36 @@ pub fn plan_for_intent(prompt: &str, revision: u64) -> Result<EditorPlan, Editor
             expected_world_revision: revision,
             commands: vec![
                 EditorCommand::CreateFieldZone {
-                    origin: TilePos::new(32, 8),
+                    origin: TilePos::new(40, 36),
                     size: (8, 12),
                     crop_id: "tomato".to_owned(),
                 },
                 EditorCommand::PlaceBuilding {
                     kind: FacilityKind::IrrigationNode,
-                    position: TilePos::new(41, 14),
+                    position: TilePos::new(49, 40),
                 },
                 EditorCommand::SpawnRobot {
                     robot_def_id: "pollination_drone".to_owned(),
                     count: 2,
-                    position: TilePos::new(31, 29),
+                    position: TilePos::new(49, 42),
                 },
             ],
             preview: vec![
                 PreviewMarker {
                     kind: PreviewKind::Field,
-                    position: TilePos::new(32, 8),
+                    position: TilePos::new(40, 36),
                     size: (8, 12),
                     label: "Tomato Field".to_owned(),
                 },
                 PreviewMarker {
                     kind: PreviewKind::Facility,
-                    position: TilePos::new(41, 14),
+                    position: TilePos::new(49, 40),
                     size: (1, 1),
                     label: "Irrigation".to_owned(),
                 },
                 PreviewMarker {
                     kind: PreviewKind::Robot,
-                    position: TilePos::new(31, 29),
+                    position: TilePos::new(49, 42),
                     size: (1, 1),
                     label: "2 x Pollen Drone".to_owned(),
                 },
